@@ -1,0 +1,62 @@
+version: 1
+
+dataset:
+  path: ../examples/datasets/benchmark.jsonl
+  format: auto
+
+models:
+  base:
+    base_url: http://localhost:8001/v1
+    name: base-model
+    api_key: null
+    timeout_seconds: 60
+    generation_parameters:
+      temperature: 0
+      max_tokens: 512
+
+  fine_tuned:
+    base_url: http://localhost:8002/v1
+    name: fine-tuned-model
+    api_key: null
+    timeout_seconds: 60
+    generation_parameters:
+      temperature: 0
+      max_tokens: 512
+
+  judge:
+    base_url: http://localhost:8003/v1
+    name: judge-model
+    api_key: null
+    timeout_seconds: 60
+    generation_parameters:
+      temperature: 0
+      max_tokens: 1024
+
+evaluation:
+  prompt_template: ../prompts/judge/default_pairwise.txt
+  criteria:
+    - name: correctness
+      description: The answer is factually and logically correct.
+      weight: 0.5
+      minimum: 1
+      maximum: 5
+    - name: relevance
+      description: The answer directly addresses the question.
+      weight: 0.3
+      minimum: 1
+      maximum: 5
+    - name: clarity
+      description: The answer is clear and understandable.
+      weight: 0.2
+      minimum: 1
+      maximum: 5
+
+runtime:
+  concurrency: 1
+  max_retries: 2
+  retry_backoff_seconds: 0.5
+  random_seed: 42
+  log_level: INFO
+
+output:
+  runs_dir: ../runs
