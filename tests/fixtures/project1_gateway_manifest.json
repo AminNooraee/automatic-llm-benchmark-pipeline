@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "status": "ready",
+  "provider": "litellm",
+  "api": "openai-compatible",
+  "base_url": "https://gateway.example/v1",
+  "models": {
+    "base": {"name": "gateway-base"},
+    "fine_tuned": {"name": "gateway-fine"}
+  }
+}

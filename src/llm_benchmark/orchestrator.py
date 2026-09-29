@@ -20,6 +20,7 @@ from llm_benchmark.inference.models import InferenceRunResult
 from llm_benchmark.metrics.calculator import BenchmarkMetricsCalculator
 from llm_benchmark.reporting.generator import ReportGenerator
 from llm_benchmark.reporting.models import ReportGenerationResult
+from llm_benchmark.preflight import EndpointPreflight
 from llm_benchmark.runs.manager import RunManager
 from llm_benchmark.runs.metadata import ReproducibilityRecorder
 from llm_benchmark.runs.validator import RunArtifactValidator
@@ -46,6 +47,11 @@ class BenchmarkPipeline:
 
     def open_run(self, config: AppConfig, run_dir: str | Path) -> RunContext:
         return self._run_manager.open_existing(config, run_dir)
+
+    async def preflight(
+        self, config: AppConfig, *, model_client: ModelClient | None = None
+    ) -> None:
+        await EndpointPreflight().run(config, model_client=model_client)
 
     def prepare_dataset(
         self, config: AppConfig, context: RunContext

@@ -70,3 +70,12 @@ Normalized errors distinguish request validation, connection failure, timeout,
 authentication failure, API failure, and malformed responses. Logs record only
 operational metadata such as model name, attempt, and status code. Prompts,
 response bodies, authorization headers, and API keys are not logged.
+
+## Reasoning-capable responses
+
+Unknown provider metadata and `reasoning` / `reasoning_content` fields are
+tolerated when `choices[0].message.content` contains the final answer. Final
+assistant content remains canonical. If reasoning exists but final content is
+null or blank, the client raises the normalized sample-level error “Endpoint
+returned reasoning output but no final assistant content.” Reasoning text is not
+copied into generation results, reports, or ordinary logs.

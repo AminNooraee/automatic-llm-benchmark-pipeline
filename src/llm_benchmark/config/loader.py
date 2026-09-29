@@ -12,6 +12,7 @@ import yaml
 from pydantic import ValidationError
 
 from llm_benchmark.config.models import AppConfig
+from llm_benchmark.config.handoff import load_project1_handoff, overlay_handoff
 from llm_benchmark.config.validation import validate_config_semantics
 from llm_benchmark.exceptions import ConfigurationError
 
@@ -19,7 +20,9 @@ from llm_benchmark.exceptions import ConfigurationError
 _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
-def load_config(path: str | Path) -> AppConfig:
+def load_config(
+    path: str | Path, *, project1_handoff: str | Path | None = None
+) -> AppConfig:
     """Load, resolve, and validate a benchmark YAML configuration."""
 
     config_path = Path(path).expanduser().resolve()
@@ -36,7 +39,10 @@ def load_config(path: str | Path) -> AppConfig:
     if not isinstance(raw, dict):
         raise ConfigurationError("Configuration root must be a mapping")
 
-    expanded = _expand_environment(copy.deepcopy(raw))
+    prepared = copy.deepcopy(raw)
+    if project1_handoff is not None:
+        overlay_handoff(prepared, load_project1_handoff(project1_handoff))
+    expanded = _expand_environment(prepared)
     resolved = _resolve_paths(expanded, config_path.parent)
     secret_values = _extract_raw_secrets(resolved)
 

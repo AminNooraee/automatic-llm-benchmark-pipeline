@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -53,6 +54,9 @@ class CriterionInformation(ReportContract):
 
 
 class BenchmarkReport(ReportContract):
+    comparison_status: Literal[
+        "comparison_available", "no_successful_evaluations"
+    ]
     benchmark_metadata: BenchmarkMetadata
     model_information: ComparedModels
     dataset_information: DatasetInformation

@@ -13,6 +13,9 @@ models:
     generation_parameters:
       temperature: 0
       max_tokens: 512
+      # Optional endpoint-specific example (never added automatically):
+      # chat_template_kwargs:
+      #   enable_thinking: false
 
   fine_tuned:
     base_url: http://localhost:8002/v1

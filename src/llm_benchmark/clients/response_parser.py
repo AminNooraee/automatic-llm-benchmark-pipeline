@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from llm_benchmark.clients.contracts import GenerationResult, GenerationUsage
 from llm_benchmark.clients.errors import ModelResponseError
@@ -14,14 +14,9 @@ class _CompatibleResponseModel(BaseModel):
 
 
 class _ResponseMessage(_CompatibleResponseModel):
-    content: str
-
-    @field_validator("content")
-    @classmethod
-    def reject_empty_content(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("assistant content is empty")
-        return value
+    content: str | None = None
+    reasoning: object | None = Field(default=None, exclude=True)
+    reasoning_content: object | None = Field(default=None, exclude=True)
 
 
 class _ResponseChoice(_CompatibleResponseModel):
@@ -41,6 +36,23 @@ class _ChatCompletionResponse(_CompatibleResponseModel):
     model: str | None = None
     choices: list[_ResponseChoice] = Field(min_length=1)
     usage: _ResponseUsage | None = None
+
+
+def _contains_reasoning_field(value: object, depth: int = 4) -> bool:
+    if depth <= 0:
+        return False
+    if isinstance(value, dict):
+        for key, item in value.items():
+            normalized = str(key).lower()
+            if key != "content" and (
+                "reason" in normalized or "think" in normalized
+            ):
+                return True
+            if _contains_reasoning_field(item, depth - 1):
+                return True
+    elif isinstance(value, list):
+        return any(_contains_reasoning_field(item, depth - 1) for item in value)
+    return False
 
 
 def parse_chat_completion(
@@ -67,6 +79,15 @@ def parse_chat_completion(
         raise ModelResponseError(requested_model, details, attempts) from exc
 
     choice = parsed.choices[0]
+    content = choice.message.content
+    if content is None or not content.strip():
+        has_reasoning = _contains_reasoning_field(payload)
+        reason = (
+            "Endpoint returned reasoning output but no final assistant content"
+            if has_reasoning
+            else "assistant content is null or empty"
+        )
+        raise ModelResponseError(requested_model, reason, attempts)
     usage = None
     if parsed.usage is not None:
         usage = GenerationUsage(
@@ -75,7 +96,7 @@ def parse_chat_completion(
             total_tokens=parsed.usage.total_tokens,
         )
     return GenerationResult(
-        content=choice.message.content,
+        content=content,
         model_name=parsed.model or requested_model,
         finish_reason=choice.finish_reason,
         usage=usage,

@@ -56,6 +56,11 @@ class ReportGenerator:
         )
 
         report = BenchmarkReport(
+            comparison_status=(
+                "comparison_available"
+                if analysis.aggregate_metrics.successful_evaluations > 0
+                else "no_successful_evaluations"
+            ),
             benchmark_metadata=BenchmarkMetadata(
                 run_id=manifest.run_id,
                 generated_at=datetime.now(UTC),
@@ -145,6 +150,7 @@ class ReportGenerator:
             f"- Successful evaluations: {metrics.successful_evaluations}",
             f"- Failed evaluations: {metrics.failed_evaluations}",
             f"- Skipped evaluations: {metrics.skipped_evaluations}",
+            f"- Comparison status: `{report.comparison_status}`",
             "",
             "## Compared models",
             "",
@@ -180,6 +186,12 @@ class ReportGenerator:
             "| Criterion | Weight | Range | Description |",
             "|---|---:|---:|---|",
         ]
+        if report.comparison_status == "no_successful_evaluations":
+            position = lines.index("## Overall results") + 2
+            lines[position:position] = [
+                "**No model comparison conclusion is available because zero judge evaluations succeeded.**",
+                "",
+            ]
         for criterion in report.evaluation_criteria:
             lines.append(
                 f"| {self._table(criterion.name)} | {criterion.weight:.4g} | "

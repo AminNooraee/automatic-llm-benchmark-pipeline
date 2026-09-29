@@ -10,6 +10,24 @@ The pipeline consumes model endpoints; it does not train or serve models.
 Project #1 can produce the fine-tuned model, while this independent Project #2
 compares that endpoint with its base model.
 
+The runtime knows endpoint URLs and model routing names, not model families or
+providers. Base, fine-tuned, and judge are the same `EndpointConfig` concept and
+must expose non-streaming OpenAI-compatible Chat Completions.
+
+## One-command benchmark
+
+After preparing a repository-local config/dataset and exporting any `${VAR}`
+secrets referenced by the config, run:
+
+```sh
+sh scripts/run_benchmark.sh configs/company_benchmark.yaml
+```
+
+The launcher builds the CPU-only image when absent, runs an ephemeral non-root
+container, performs endpoint preflight, and writes JSON, Markdown, and CSV under
+`runs/`. It does not mount the Docker socket or require a GPU or VM. An optional
+Project #1 handoff is accepted with `--project1-handoff /path/to/gateway_manifest.json`.
+
 Current release: **v1.0.0**
 
 ## Architecture
@@ -349,3 +367,14 @@ statistical analysis. Production endpoint compatibility and credentials must
 be validated in the target environment. The Docker definition is provided,
 but the image was not built during local acceptance because Docker was
 unavailable.
+
+`llm-benchmark run` checks base, fine-tuned, and judge compatibility before it
+creates a run. Use `llm-benchmark preflight --config CONFIG` for the check alone,
+or the explicit `--skip-preflight` run override. A reasoning-capable endpoint may
+return extra reasoning metadata, but must still provide final assistant
+`content`; private reasoning is never substituted or persisted. Operator-known
+request options remain available through `generation_parameters`.
+
+Preflight verifies connectivity and response-contract compatibility only; it
+does not establish model quality, capacity, or production readiness. Real
+endpoint/network behavior must be validated in the operator's environment.

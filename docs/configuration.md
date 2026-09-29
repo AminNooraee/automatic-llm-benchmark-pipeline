@@ -1,6 +1,13 @@
 # Configuration guide
 
 Configuration is strict YAML. Unknown keys and invalid value types are rejected.
+
+All three model roles use the same provider-neutral endpoint schema. The core
+does not identify model families. `generation_parameters` is passed through as
+configured; no endpoint-specific option is added automatically. For example, an
+operator who knows an endpoint supports it may set
+`chat_template_kwargs: {enable_thinking: false}`, but this is neither required
+nor a default.
 Relative paths are resolved from the configuration file's directory.
 
 ## Complete example
@@ -135,3 +142,16 @@ llm-benchmark validate --config configs/example.yaml
 Validation checks configuration shape, paths, dataset format, prompt template,
 criterion math, URL structure, runtime bounds, and output-directory safety. It
 does not contact model endpoints or create a run.
+
+## Project #1 handoff overlay
+
+`--project1-handoff FILE` accepts Project #1 schema version 1 endpoint manifests:
+`status: ready`, `api: openai-compatible`, `base_url`, and
+`models.base.name` / `models.fine_tuned.name`. Gateway and documented direct
+serving manifests are accepted. The handoff is authoritative only for those two
+endpoint URLs and names. API keys, timeouts, generation parameters, judge,
+dataset, prompt, criteria, runtime, and output remain from this configuration.
+The manifest cannot supply credentials and malformed/unknown fields fail closed.
+
+Environment expansion occurs after this overlay, so superseded manual identity
+placeholders are not required. Secrets referenced elsewhere must still be set.

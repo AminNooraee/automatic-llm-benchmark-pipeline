@@ -1,5 +1,31 @@
 # Usage examples
 
+Endpoint compatibility alone (one request per logical role on success):
+
+```sh
+llm-benchmark preflight --config configs/example.yaml
+```
+
+Normal runs preflight by default. `--skip-preflight` is an explicit operator
+escape hatch. Preflight occurs before run creation and dataset inference.
+
+Manual mode remains three arbitrary OpenAI-compatible endpoints:
+
+```sh
+llm-benchmark run --config configs/example.yaml
+```
+
+Optional Project #1 integration changes only base/fine routing:
+
+```sh
+llm-benchmark run --config configs/example.yaml \
+  --project1-handoff /path/to/gateway/gateway_manifest.json
+```
+
+For a Dockerized host launch, use
+`sh scripts/run_benchmark.sh configs/example.yaml` with the same optional
+handoff flag.
+
 ## Install for local development
 
 Python 3.11 or 3.12 is recommended:

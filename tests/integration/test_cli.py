@@ -119,9 +119,92 @@ def test_cli_hides_unexpected_internal_error_details(
 
     monkeypatch.setattr(BenchmarkPipeline, "initialize_run", fail_initialization)
 
-    exit_code = main(["run", "--config", str(config_path)])
+    exit_code = main(["run", "--config", str(config_path), "--skip-preflight"])
 
     captured = capsys.readouterr()
     assert exit_code == 3
     assert "Unexpected internal error" in captured.err
     assert "sensitive internal detail" not in captured.err
+
+
+def test_failed_preflight_creates_no_run_or_inference(
+    config_factory, capsys, monkeypatch
+) -> None:
+    config_path = config_factory()
+    calls = 0
+
+    async def fail_generate(self, model_config, messages):
+        nonlocal calls
+        calls += 1
+        from llm_benchmark.clients.errors import ModelConnectionError
+        raise ModelConnectionError(model_config.name, 1)
+
+    monkeypatch.setattr(OpenAICompatibleClient, "generate", fail_generate)
+    exit_code = main(["run", "--config", str(config_path)])
+
+    assert exit_code == 2
+    assert calls == 1
+    assert not (config_path.parent / "runs").exists()
+    assert "base endpoint" in capsys.readouterr().err
+
+
+def test_preflight_command_checks_three_roles_without_creating_run(
+    config_factory, capsys, monkeypatch
+) -> None:
+    config_path = config_factory()
+    calls = []
+
+    async def fake_generate(self, model_config, messages):
+        calls.append(model_config.name)
+        content = (
+            json.dumps({
+                "winner": "A", "scores": {"A": 4, "B": 3},
+                "criteria_scores": {
+                    "correctness": {"A": 4, "B": 3},
+                    "clarity": {"A": 4, "B": 3},
+                },
+                "reason": "A follows the instruction.",
+            })
+            if model_config.name == "judge-model" else "ready"
+        )
+        return GenerationResult(
+            content=content, model_name=model_config.name,
+            latency_ms=1, attempts=1,
+        )
+
+    monkeypatch.setattr(OpenAICompatibleClient, "generate", fake_generate)
+    assert main(["preflight", "--config", str(config_path)]) == 0
+    assert calls == ["base-model", "fine-model", "judge-model"]
+    assert "Preflight succeeded" in capsys.readouterr().out
+    assert not (config_path.parent / "runs").exists()
+
+
+def test_skip_preflight_preserves_direct_run_path(
+    config_factory, monkeypatch
+) -> None:
+    config_path = config_factory()
+    calls = []
+
+    async def fake_generate(self, model_config, messages):
+        calls.append(model_config.name)
+        if model_config.name == "judge-model":
+            content = json.dumps({
+                "winner": "A", "scores": {"A": 4, "B": 3},
+                "criteria_scores": {
+                    "correctness": {"A": 4, "B": 3},
+                    "clarity": {"A": 4, "B": 3},
+                },
+                "reason": "A is better.",
+            })
+        else:
+            content = "answer"
+        return GenerationResult(
+            content=content, model_name=model_config.name,
+            latency_ms=1, attempts=1,
+        )
+
+    monkeypatch.setattr(OpenAICompatibleClient, "generate", fake_generate)
+    assert main(["run", "--config", str(config_path), "--skip-preflight"]) == 0
+    assert calls.count("base-model") == 1
+    assert calls.count("fine-model") == 1
+    assert calls.count("judge-model") == 1

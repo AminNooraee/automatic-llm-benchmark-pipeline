@@ -145,3 +145,13 @@ and all required files are checked across the entire run.
 
 The v1 architecture contains no UI, database, plugin framework, distributed
 executor, model runtime, cloud deployment, or advanced statistical analysis.
+
+The command flow is configuration load (plus optional local handoff overlay),
+base preflight, fine-tuned preflight, judge preflight, run initialization,
+dataset preparation, inference, judge evaluation, metrics, and reports. All
+preflight calls reuse the production client/parser. A preflight failure is
+role-specific and leaves no completed run artifact.
+
+Project #1 integration is file-contract-only. Project #2 owns a small parser for
+the current provider-neutral schema and neither imports Project #1 nor queries
+its services, database, serving implementation, or gateway internals.

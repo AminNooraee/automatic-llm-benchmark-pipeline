@@ -28,16 +28,28 @@ def build_parser() -> argparse.ArgumentParser:
         "validate", help="Validate configuration without creating a run."
     )
     validate_parser.add_argument("--config", type=Path, required=True)
+    validate_parser.add_argument("--project1-handoff", type=Path)
 
     run_parser = subparsers.add_parser(
         "run", help="Run dataset preparation, model inference, and judge evaluation."
     )
     run_parser.add_argument("--config", type=Path, required=True)
+    run_parser.add_argument("--project1-handoff", type=Path)
+    run_parser.add_argument(
+        "--skip-preflight",
+        action="store_true",
+        help="Skip endpoint compatibility checks (operator override).",
+    )
     run_parser.add_argument(
         "--resume-run",
         type=Path,
         help="Resume failed inference and evaluation in an existing run directory.",
     )
+    preflight_parser = subparsers.add_parser(
+        "preflight", help="Check all three endpoints without creating a run."
+    )
+    preflight_parser.add_argument("--config", type=Path, required=True)
+    preflight_parser.add_argument("--project1-handoff", type=Path)
     return parser
 
 
@@ -47,12 +59,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     logger: logging.Logger | None = None
 
     try:
-        config = load_config(args.config)
+        config = load_config(
+            args.config,
+            project1_handoff=getattr(args, "project1_handoff", None),
+        )
         if args.command == "validate":
             print(f"Configuration is valid: {args.config.resolve()}")
             return 0
 
         pipeline = BenchmarkPipeline()
+        if args.command == "preflight":
+            asyncio.run(pipeline.preflight(config))
+            print("Preflight succeeded: base, fine_tuned, judge")
+            return 0
+        if not args.skip_preflight:
+            asyncio.run(pipeline.preflight(config))
+            print("Preflight succeeded: base, fine_tuned, judge")
         is_resume = args.resume_run is not None
         context = (
             pipeline.open_run(config, args.resume_run)

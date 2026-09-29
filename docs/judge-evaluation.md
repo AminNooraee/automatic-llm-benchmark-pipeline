@@ -66,3 +66,11 @@ skipped evaluations are attempted again when both responses are available.
 
 Metrics and report generation consume this artifact through the separate
 contract described in `docs/reporting.md`.
+
+The structured parser accepts pure JSON, one fenced JSON object, or prose (also
+including a leading `<think>...</think>` block) containing exactly one object
+that validates against `JudgeDecision`. It scans bounded JSON values with
+`JSONDecoder.raw_decode`; it does not use a greedy expression. No valid object,
+malformed output, schema-invalid output, or more than one valid decision fails
+closed as a per-sample judge error. The decision schema is never weakened and a
+winner is never guessed.

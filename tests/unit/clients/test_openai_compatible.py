@@ -242,6 +242,69 @@ def test_malformed_success_response_is_rejected() -> None:
         _run_client(handler, operation)
 
 
+@pytest.mark.parametrize("field", ["reasoning", "reasoning_content"])
+def test_reasoning_metadata_is_tolerated_when_final_content_exists(field: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        response = _success_response(request)
+        payload = response.json()
+        payload["choices"][0]["message"][field] = "private reasoning"
+        payload["choices"][0]["message"]["provider_extension"] = {"opaque": True}
+        return httpx.Response(200, request=request, json=payload)
+
+    async def operation(client: OpenAICompatibleClient):
+        return await client.generate(
+            _model_config(), [{"role": "user", "content": "Hello"}]
+        )
+
+    assert _run_client(handler, operation).content == "Hello back"
+
+
+@pytest.mark.parametrize("field", ["reasoning", "reasoning_content"])
+def test_reasoning_only_response_has_normalized_non_sensitive_error(field: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "model": "test-model",
+                "choices": [{"message": {"content": None, field: "do not persist"}}],
+            },
+        )
+
+    async def operation(client: OpenAICompatibleClient):
+        return await client.generate(
+            _model_config(), [{"role": "user", "content": "Hello"}]
+        )
+
+    with pytest.raises(
+        ModelResponseError,
+        match="Endpoint returned reasoning output but no final assistant content",
+    ) as captured:
+        _run_client(handler, operation)
+    assert "do not persist" not in str(captured.value)
+
+
+def test_top_level_reasoning_metadata_with_null_content_is_normalized() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "model": "test-model",
+                "provider_reasoning_metadata": {"opaque": True},
+                "choices": [{"message": {"content": None}}],
+            },
+        )
+
+    async def operation(client: OpenAICompatibleClient):
+        return await client.generate(
+            _model_config(), [{"role": "user", "content": "Hello"}]
+        )
+
+    with pytest.raises(ModelResponseError, match="reasoning output"):
+        _run_client(handler, operation)
+
+
 def test_retryable_status_uses_retry_after_then_succeeds() -> None:
     calls = 0
     delays: list[float] = []

@@ -5,6 +5,28 @@ model, model weights, CUDA libraries, or an inference server. Base,
 fine-tuned, and judge models must be reachable through external
 OpenAI-compatible Chat Completions endpoints.
 
+## Host launcher
+
+```sh
+sh scripts/run_benchmark.sh configs/company_benchmark.yaml
+sh scripts/run_benchmark.sh configs/company_benchmark.yaml \
+  --project1-handoff /path/to/gateway_manifest.json
+```
+
+Only Git and Docker Engine are needed on the host. The config must be inside the
+repository. Repository inputs are mounted read-only and the runs directory is a
+read-write submount. Set `BENCHMARK_DATASETS_DIR` to expose external datasets as
+read-only `/datasets`, `BENCHMARK_RUNS_DIR` for an external writable output
+root, `BENCHMARK_IMAGE` to select the image tag, or
+`BENCHMARK_DOCKER_NETWORK` for an explicit existing network. Ordinary Docker
+networking is the default; no port, socket, privileged mode, daemon mutation,
+GPU, or VM is required.
+
+The launcher extracts only syntactically valid `${VAR}` names from the config,
+requires each to be set, and passes `-e VAR` without printing its value. Configs
+using the default `output.runs_dir: ../runs` work directly. External dataset
+paths must use the container contract `/datasets/...`.
+
 ## Build
 
 From the repository root:

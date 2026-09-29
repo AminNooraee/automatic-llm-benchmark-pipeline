@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here.
 
+## Unreleased
+
+### Added
+
+- Default base, fine-tuned, and judge endpoint preflight plus a standalone
+  `preflight` command and explicit `--skip-preflight` override.
+- Optional Project #1 schema-v1 endpoint handoff adapter.
+- Safe one-command CPU Docker launcher with minimal environment forwarding.
+
+### Changed
+
+- Chat Completions parsing now tolerates reasoning metadata while requiring
+  final assistant content.
+- Judge parsing safely recovers exactly one schema-valid JSON decision from
+  fences or prose and rejects ambiguous output.
+- Reports explicitly state when no successful judge evaluation supports a
+  comparison conclusion.
+
 ## 1.0.0 — 2026-09-19
 
 First production release.

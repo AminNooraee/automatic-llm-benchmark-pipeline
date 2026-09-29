@@ -129,3 +129,44 @@ def test_csv_cells_neutralize_spreadsheet_formulas() -> None:
         "'=HYPERLINK(\"bad\")"
     )
     assert ReportGenerator._csv_cell("ordinary text") == "ordinary text"
+
+
+def test_report_explicitly_disclaims_zero_successful_judge_evaluations(
+    config_factory, tmp_path: Path
+) -> None:
+    config = load_config(config_factory())
+    now = datetime.now(UTC)
+    manifest = RunManifest(
+        run_id="no-evidence", status=RunStatus.EVALUATION_COMPLETED,
+        created_at=now, updated_at=now, pipeline_version="1.0.0",
+        config_source=str(tmp_path / "config.yaml"),
+        config_fingerprint=config.fingerprint(), artifacts={},
+        dataset=DatasetManifest(
+            source_path=str(config.dataset.path), source_format="jsonl",
+            schema_format="prompt", detection_confidence=1,
+            detected_fields=["prompt"], sample_count=0,
+            source_sha256="a" * 64,
+            original_artifact="dataset/original_dataset.jsonl",
+            normalized_artifact="dataset/normalized_dataset.jsonl",
+        ),
+    )
+    analysis = BenchmarkAnalysis(
+        aggregate_metrics=AggregateMetrics(
+            total_samples=0, successful_evaluations=0, failed_evaluations=0,
+            skipped_evaluations=0, base_model_wins=0,
+            fine_tuned_model_wins=0, ties=0,
+            win_rate_percentage=ModelWinRates(
+                base_model=0, fine_tuned_model=0, ties=0
+            ),
+            average_scores_per_model=ModelAverageScores(
+                base_model=None, fine_tuned_model=None
+            ),
+        ),
+        samples=[],
+    )
+    generated = ReportGenerator().generate(
+        config=config, manifest=manifest, analysis=analysis, run_dir=tmp_path
+    )
+    payload = json.loads(generated.report_json_path.read_text(encoding="utf-8"))
+    assert payload["comparison_status"] == "no_successful_evaluations"
+    assert "No model comparison conclusion" in generated.report_markdown_path.read_text(encoding="utf-8")

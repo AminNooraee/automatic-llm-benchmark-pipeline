@@ -176,6 +176,33 @@ def test_judge_parser_accepts_required_structured_output() -> None:
 
 
 @pytest.mark.parametrize(
+    "wrapper",
+    [
+        "```json\n{payload}\n```",
+        "I compared both answers.\n{payload}\nThat is my decision.",
+        "<think>private analysis</think>\n{payload}",
+    ],
+)
+def test_judge_parser_recovers_one_valid_wrapped_object(wrapper: str) -> None:
+    content = wrapper.format(payload=json.dumps(VALID_DECISION))
+    assert JudgeOutputParser().parse(content).winner.value == "A"
+
+
+def test_judge_parser_fails_closed_for_multiple_valid_objects() -> None:
+    content = json.dumps(VALID_DECISION) + "\n" + json.dumps(
+        {**VALID_DECISION, "winner": "B"}
+    )
+    with pytest.raises(JudgeOutputError, match="ambiguous"):
+        JudgeOutputParser().parse(content)
+
+
+@pytest.mark.parametrize("content", ["not json", '{"winner":', "{}"])
+def test_judge_parser_rejects_missing_malformed_or_invalid_object(content: str) -> None:
+    with pytest.raises(JudgeOutputError):
+        JudgeOutputParser().parse(content)
+
+
+@pytest.mark.parametrize(
     ("content", "message"),
     [
         ("not json", "not valid JSON"),
