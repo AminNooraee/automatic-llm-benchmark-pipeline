@@ -71,7 +71,7 @@ if ! docker image inspect "$image" >/dev/null 2>&1; then
   docker build --tag "$image" "$repo_dir"
 fi
 
-set -- docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid \
+set -- docker run --rm --user "$(id -u):$(id -g)" --read-only --tmpfs /tmp:rw,noexec,nosuid \
   --mount "type=bind,src=$repo_dir,dst=/workspace,readonly" \
   --mount "type=bind,src=$runs_dir,dst=/workspace/runs" \
   --workdir /workspace

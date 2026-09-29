@@ -8,6 +8,7 @@ def test_launcher_has_safe_mount_and_runtime_contract() -> None:
     text = (ROOT / "scripts" / "run_benchmark.sh").read_text(encoding="utf-8")
     assert "docker.sock" not in text
     assert "--privileged" not in text
+    assert '--user "$(id -u):$(id -g)"' in text
     assert "dst=/workspace,readonly" in text
     assert "dst=/workspace/runs" in text
     assert "dst=/datasets,readonly" in text
