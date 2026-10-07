@@ -42,6 +42,9 @@ runs_input=${BENCHMARK_RUNS_DIR:-$repo_dir/runs}
 mkdir -p -- "$runs_input"
 runs_dir=$(CDPATH= cd -- "$runs_input" && pwd -P)
 
+# Ensure the nested Docker bind target exists before /workspace is mounted read-only.
+mkdir -p -- "$repo_dir/runs"
+
 dataset_mount=
 if [ -n "${BENCHMARK_DATASETS_DIR:-}" ]; then
   [ -d "$BENCHMARK_DATASETS_DIR" ] || { echo "BENCHMARK_DATASETS_DIR is not a directory" >&2; exit 66; }
