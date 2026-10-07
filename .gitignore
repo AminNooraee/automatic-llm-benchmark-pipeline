@@ -23,6 +23,9 @@ htmlcov/
 /runs/
 /outputs/
 /artifacts/
+/ci_artifacts/
+/datasets/
+/gateway_manifest.json
 *.log
 .env
 .env.*

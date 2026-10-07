@@ -1,0 +1,66 @@
+version: 1
+
+dataset:
+  path: /datasets/phase1_benchmark.json
+  format: auto
+
+models:
+  base:
+    # Project #1's handoff replaces this URL and model name before validation.
+    base_url: http://project1-handoff.invalid/v1
+    name: project1-base-placeholder
+    api_key: ${LITELLM_API_KEY}
+    timeout_seconds: 60
+    generation_parameters:
+      temperature: 0
+      max_tokens: 512
+
+  fine_tuned:
+    # Project #1's handoff replaces this URL and model name before validation.
+    base_url: http://project1-handoff.invalid/v1
+    name: project1-fine-tuned-placeholder
+    api_key: ${LITELLM_API_KEY}
+    timeout_seconds: 60
+    generation_parameters:
+      temperature: 0
+      max_tokens: 512
+
+  judge:
+    base_url: http://172.20.1.52:4000/v1
+    name: qwen38-sglang
+    api_key: ${LITELLM_API_KEY}
+    timeout_seconds: 120
+    generation_parameters:
+      temperature: 0
+      max_tokens: 1024
+      chat_template_kwargs:
+        enable_thinking: false
+
+evaluation:
+  prompt_template: ../prompts/judge/default_pairwise.txt
+  criteria:
+    - name: correctness
+      description: The answer is factually and logically correct.
+      weight: 0.5
+      minimum: 1
+      maximum: 5
+    - name: relevance
+      description: The answer directly addresses the question.
+      weight: 0.3
+      minimum: 1
+      maximum: 5
+    - name: clarity
+      description: The answer is clear and understandable.
+      weight: 0.2
+      minimum: 1
+      maximum: 5
+
+runtime:
+  concurrency: 1
+  max_retries: 2
+  retry_backoff_seconds: 0.5
+  random_seed: 42
+  log_level: INFO
+
+output:
+  runs_dir: ../runs

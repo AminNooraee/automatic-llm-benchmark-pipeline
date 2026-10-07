@@ -1,0 +1,87 @@
+stages:
+  - benchmark
+
+variables:
+  BENCHMARK_DATASETS_DIR: /srv/automatic-llm-benchmark/datasets
+  BENCHMARK_RUNS_DIR: /srv/automatic-llm-benchmark/runs
+
+phase1_benchmark:
+  stage: benchmark
+  resource_group: phase1-benchmark
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "pipeline"'
+    - when: never
+  script:
+    - |
+      set -eu
+
+      : "${PROJECT1_HANDOFF_B64:?PROJECT1_HANDOFF_B64 is required}"
+      : "${LITELLM_API_KEY:?LITELLM_API_KEY is required}"
+
+      dataset_path="$BENCHMARK_DATASETS_DIR/phase1_benchmark.json"
+      if [ ! -r "$dataset_path" ]; then
+        echo "Required benchmark dataset is not readable: $dataset_path" >&2
+        exit 66
+      fi
+
+      handoff_file=$(mktemp "${TMPDIR:-/tmp}/project1-gateway-manifest.XXXXXX.json")
+      benchmark_log=$(mktemp "${TMPDIR:-/tmp}/phase1-benchmark.XXXXXX.log")
+      cleanup() {
+        rm -f -- "$handoff_file" "$benchmark_log"
+      }
+      trap cleanup EXIT HUP INT TERM
+      chmod 600 "$handoff_file"
+
+      if ! printf '%s' "$PROJECT1_HANDOFF_B64" | base64 --decode >"$handoff_file"; then
+        echo "PROJECT1_HANDOFF_B64 is not valid Base64" >&2
+        exit 65
+      fi
+
+      if sh scripts/run_benchmark.sh configs/ci_phase1.yaml \
+        --project1-handoff "$handoff_file" >"$benchmark_log" 2>&1; then
+        cat "$benchmark_log"
+      else
+        benchmark_status=$?
+        cat "$benchmark_log"
+        exit "$benchmark_status"
+      fi
+
+      run_ids=$(sed -n 's#^Run initialized: /workspace/runs/\([A-Za-z0-9][A-Za-z0-9._-]*\)$#\1#p' "$benchmark_log")
+      run_count=$(printf '%s\n' "$run_ids" | sed '/^$/d' | wc -l | tr -d '[:space:]')
+      if [ "$run_count" != "1" ]; then
+        echo "Expected exactly one run initialized by this job; found $run_count" >&2
+        exit 70
+      fi
+      run_id=$run_ids
+      run_dir="$BENCHMARK_RUNS_DIR/$run_id"
+      if [ ! -d "$run_dir" ]; then
+        echo "Created benchmark run directory was not found: $run_dir" >&2
+        exit 70
+      fi
+
+      artifact_dir="$CI_PROJECT_DIR/ci_artifacts/benchmark"
+      install -d "$artifact_dir"
+      for artifact in \
+        reports/report.md \
+        reports/report.json \
+        reports/samples.csv \
+        metadata/artifact_validation.json \
+        metadata/reproducibility.json \
+        manifest.json
+      do
+        if [ ! -r "$run_dir/$artifact" ]; then
+          echo "Required benchmark artifact is missing: $artifact" >&2
+          exit 70
+        fi
+        cp "$run_dir/$artifact" "$artifact_dir/$(basename "$artifact")"
+      done
+  artifacts:
+    name: "phase1-benchmark-$CI_PIPELINE_ID"
+    paths:
+      - ci_artifacts/benchmark/report.md
+      - ci_artifacts/benchmark/report.json
+      - ci_artifacts/benchmark/samples.csv
+      - ci_artifacts/benchmark/artifact_validation.json
+      - ci_artifacts/benchmark/reproducibility.json
+      - ci_artifacts/benchmark/manifest.json
+    expire_in: 30 days
