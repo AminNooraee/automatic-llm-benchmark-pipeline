@@ -79,7 +79,20 @@ def test_gitlab_job_is_downstream_only_and_publishes_exact_run() -> None:
         "LITELLM_API_KEY",
     ):
         assert f'"${{{variable}:?{variable} is required}}"' in script
-    assert "benchmark.json|benchmark.jsonl|benchmark.csv|benchmark.parquet" in script
+    for variable in ("PROJECT1_UPSTREAM_PROJECT_ID", "PROJECT1_UPSTREAM_JOB_ID"):
+        assert (
+            f'printf \'%s\' "${variable}" | grep -Eq '
+            "'^[0-9]*[1-9][0-9]*$'"
+        ) in script
+        assert f"{variable} must be a positive numeric ID" in script
+    assert (
+        'case "$PROJECT1_BENCHMARK_FILE" in\n'
+        '  benchmark.json|benchmark.jsonl|benchmark.csv|benchmark.parquet) ;;\n'
+        '  *) echo "Unsupported benchmark filename: $PROJECT1_BENCHMARK_FILE" >&2; exit 65 ;;\n'
+        'esac'
+    ) in script
+    assert 'command -v curl >/dev/null 2>&1' in script
+    assert "curl is required to download the benchmark dataset" in script
     assert 'dataset_dir="$CI_PROJECT_DIR/ci_artifacts/input"' in script
     assert 'rm -rf -- "$dataset_dir"' in script
     assert 'install -d -m 700 "$dataset_dir"' in script

@@ -22,10 +22,22 @@ phase1_benchmark:
       : "${PROJECT1_ARTIFACT_READ_TOKEN:?PROJECT1_ARTIFACT_READ_TOKEN is required}"
       : "${LITELLM_API_KEY:?LITELLM_API_KEY is required}"
 
+      if ! printf '%s' "$PROJECT1_UPSTREAM_PROJECT_ID" | grep -Eq '^[0-9]*[1-9][0-9]*$'; then
+        echo "PROJECT1_UPSTREAM_PROJECT_ID must be a positive numeric ID" >&2
+        exit 65
+      fi
+      if ! printf '%s' "$PROJECT1_UPSTREAM_JOB_ID" | grep -Eq '^[0-9]*[1-9][0-9]*$'; then
+        echo "PROJECT1_UPSTREAM_JOB_ID must be a positive numeric ID" >&2
+        exit 65
+      fi
       case "$PROJECT1_BENCHMARK_FILE" in
         benchmark.json|benchmark.jsonl|benchmark.csv|benchmark.parquet) ;;
         *) echo "Unsupported benchmark filename: $PROJECT1_BENCHMARK_FILE" >&2; exit 65 ;;
       esac
+      if ! command -v curl >/dev/null 2>&1; then
+        echo "curl is required to download the benchmark dataset" >&2
+        exit 69
+      fi
 
       dataset_dir="$CI_PROJECT_DIR/ci_artifacts/input"
       dataset_path="$dataset_dir/$PROJECT1_BENCHMARK_FILE"
