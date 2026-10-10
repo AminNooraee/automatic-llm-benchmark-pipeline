@@ -2,8 +2,8 @@ stages:
   - benchmark
 
 variables:
-  BENCHMARK_DATASETS_DIR: /srv/automatic-llm-benchmark/datasets
   BENCHMARK_RUNS_DIR: /srv/automatic-llm-benchmark/runs
+  GITLAB_INTERNAL_API_URL: "http://172.20.1.52:81/api/v4"
 
 phase1_benchmark:
   stage: benchmark
@@ -16,20 +16,47 @@ phase1_benchmark:
       set -eu
 
       : "${PROJECT1_HANDOFF_B64:?PROJECT1_HANDOFF_B64 is required}"
+      : "${PROJECT1_UPSTREAM_PROJECT_ID:?PROJECT1_UPSTREAM_PROJECT_ID is required}"
+      : "${PROJECT1_UPSTREAM_JOB_ID:?PROJECT1_UPSTREAM_JOB_ID is required}"
+      : "${PROJECT1_BENCHMARK_FILE:?PROJECT1_BENCHMARK_FILE is required}"
+      : "${PROJECT1_ARTIFACT_READ_TOKEN:?PROJECT1_ARTIFACT_READ_TOKEN is required}"
       : "${LITELLM_API_KEY:?LITELLM_API_KEY is required}"
 
-      dataset_path="$BENCHMARK_DATASETS_DIR/phase1_benchmark.json"
-      if [ ! -r "$dataset_path" ]; then
-        echo "Required benchmark dataset is not readable: $dataset_path" >&2
+      case "$PROJECT1_BENCHMARK_FILE" in
+        benchmark.json|benchmark.jsonl|benchmark.csv|benchmark.parquet) ;;
+        *) echo "Unsupported benchmark filename: $PROJECT1_BENCHMARK_FILE" >&2; exit 65 ;;
+      esac
+
+      dataset_dir="$CI_PROJECT_DIR/ci_artifacts/input"
+      dataset_path="$dataset_dir/$PROJECT1_BENCHMARK_FILE"
+      handoff_file=
+      benchmark_log=
+      cleanup() {
+        rm -f -- "$handoff_file" "$benchmark_log"
+        rm -rf -- "$dataset_dir"
+      }
+      trap cleanup EXIT HUP INT TERM
+      rm -rf -- "$dataset_dir"
+      install -d -m 700 "$dataset_dir"
+
+      artifact_url="$GITLAB_INTERNAL_API_URL/projects/$PROJECT1_UPSTREAM_PROJECT_ID/jobs/$PROJECT1_UPSTREAM_JOB_ID/artifacts/ci_artifacts/job/$PROJECT1_BENCHMARK_FILE"
+      if ! curl --fail --silent --show-error --location \
+        --header "PRIVATE-TOKEN: $PROJECT1_ARTIFACT_READ_TOKEN" \
+        --output "$dataset_path" "$artifact_url"; then
+        echo "Failed to download benchmark dataset from upstream job" >&2
+        exit 69
+      fi
+      if [ ! -f "$dataset_path" ] || [ ! -s "$dataset_path" ]; then
+        echo "Downloaded benchmark dataset is missing or empty" >&2
         exit 66
       fi
 
+      BENCHMARK_DATASETS_DIR="$dataset_dir"
+      BENCHMARK_DATASET_PATH="/datasets/$PROJECT1_BENCHMARK_FILE"
+      export BENCHMARK_DATASETS_DIR BENCHMARK_DATASET_PATH
+
       handoff_file=$(mktemp "${TMPDIR:-/tmp}/project1-gateway-manifest.XXXXXX.json")
       benchmark_log=$(mktemp "${TMPDIR:-/tmp}/phase1-benchmark.XXXXXX.log")
-      cleanup() {
-        rm -f -- "$handoff_file" "$benchmark_log"
-      }
-      trap cleanup EXIT HUP INT TERM
       chmod 600 "$handoff_file"
 
       if ! printf '%s' "$PROJECT1_HANDOFF_B64" | base64 --decode >"$handoff_file"; then

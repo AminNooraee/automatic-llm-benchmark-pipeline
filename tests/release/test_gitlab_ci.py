@@ -14,7 +14,7 @@ def test_phase1_ci_config_contract() -> None:
     )
 
     assert config["dataset"] == {
-        "path": "/datasets/phase1_benchmark.json",
+        "path": "${BENCHMARK_DATASET_PATH}",
         "format": "auto",
     }
     for role in ("base", "fine_tuned"):
@@ -59,9 +59,10 @@ def test_gitlab_job_is_downstream_only_and_publishes_exact_run() -> None:
     job = pipeline["phase1_benchmark"]
     script = "\n".join(job["script"])
 
+    assert pipeline["stages"] == ["benchmark"]
     assert pipeline["variables"] == {
-        "BENCHMARK_DATASETS_DIR": "/srv/automatic-llm-benchmark/datasets",
         "BENCHMARK_RUNS_DIR": "/srv/automatic-llm-benchmark/runs",
+        "GITLAB_INTERNAL_API_URL": "http://172.20.1.52:81/api/v4",
     }
     assert job["stage"] == "benchmark"
     assert job["resource_group"] == "phase1-benchmark"
@@ -69,11 +70,38 @@ def test_gitlab_job_is_downstream_only_and_publishes_exact_run() -> None:
         {"if": '$CI_PIPELINE_SOURCE == "pipeline"'},
         {"when": "never"},
     ]
-    assert "PROJECT1_HANDOFF_B64 is required" in script
-    assert "LITELLM_API_KEY is required" in script
-    assert '[ ! -r "$dataset_path" ]' in script
+    for variable in (
+        "PROJECT1_HANDOFF_B64",
+        "PROJECT1_UPSTREAM_PROJECT_ID",
+        "PROJECT1_UPSTREAM_JOB_ID",
+        "PROJECT1_BENCHMARK_FILE",
+        "PROJECT1_ARTIFACT_READ_TOKEN",
+        "LITELLM_API_KEY",
+    ):
+        assert f'"${{{variable}:?{variable} is required}}"' in script
+    assert "benchmark.json|benchmark.jsonl|benchmark.csv|benchmark.parquet" in script
+    assert 'dataset_dir="$CI_PROJECT_DIR/ci_artifacts/input"' in script
+    assert 'rm -rf -- "$dataset_dir"' in script
+    assert 'install -d -m 700 "$dataset_dir"' in script
+    assert (
+        '$GITLAB_INTERNAL_API_URL/projects/$PROJECT1_UPSTREAM_PROJECT_ID/'
+        'jobs/$PROJECT1_UPSTREAM_JOB_ID/artifacts/ci_artifacts/job/'
+        '$PROJECT1_BENCHMARK_FILE'
+    ) in script
+    assert "curl --fail --silent --show-error --location" in script
+    assert '--header "PRIVATE-TOKEN: $PROJECT1_ARTIFACT_READ_TOKEN"' in script
+    assert '--output "$dataset_path" "$artifact_url"' in script
+    assert '[ ! -f "$dataset_path" ] || [ ! -s "$dataset_path" ]' in script
+    assert 'BENCHMARK_DATASETS_DIR="$dataset_dir"' in script
+    assert 'BENCHMARK_DATASET_PATH="/datasets/$PROJECT1_BENCHMARK_FILE"' in script
+    assert "export BENCHMARK_DATASETS_DIR BENCHMARK_DATASET_PATH" in script
+    assert "/srv/automatic-llm-benchmark/datasets/phase1_benchmark.json" not in script
+    assert "set -x" not in script
+    assert 'echo "$PROJECT1_ARTIFACT_READ_TOKEN"' not in script
+    assert 'echo "$LITELLM_API_KEY"' not in script
     assert "base64 --decode" in script
     assert "--project1-handoff" in script
+    assert 'rm -f -- "$handoff_file" "$benchmark_log"' in script
     assert "--skip-preflight" not in script
     assert "Run initialized: /workspace/runs/" in script
     assert 'run_dir="$BENCHMARK_RUNS_DIR/$run_id"' in script

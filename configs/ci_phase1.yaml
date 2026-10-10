@@ -1,7 +1,7 @@
 version: 1
 
 dataset:
-  path: /datasets/phase1_benchmark.json
+  path: ${BENCHMARK_DATASET_PATH}
   format: auto
 
 models:
