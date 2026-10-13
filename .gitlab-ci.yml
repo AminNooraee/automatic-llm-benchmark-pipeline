@@ -7,6 +7,7 @@ variables:
 
 phase1_benchmark:
   stage: benchmark
+  timeout: 3h
   resource_group: phase1-benchmark
   rules:
     - if: '$CI_PIPELINE_SOURCE == "pipeline"'
