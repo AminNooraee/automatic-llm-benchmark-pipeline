@@ -77,12 +77,13 @@ phase1_benchmark:
         exit 65
       fi
 
+      set -o pipefail
+
       if sh scripts/run_benchmark.sh configs/ci_phase1.yaml \
-        --project1-handoff "$handoff_file" >"$benchmark_log" 2>&1; then
-        cat "$benchmark_log"
+        --project1-handoff "$handoff_file" 2>&1 | tee "$benchmark_log"; then
+        :
       else
         benchmark_status=$?
-        cat "$benchmark_log"
         exit "$benchmark_status"
       fi
 

@@ -73,8 +73,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("Preflight succeeded: base, fine_tuned, judge")
             return 0
         if not args.skip_preflight:
+            print("[1/5] Checking Base, Fine-tuned and Judge endpoints...", flush=True)
             asyncio.run(pipeline.preflight(config))
-            print("Preflight succeeded: base, fine_tuned, judge")
+            print("      ✓ Endpoint preflight passed", flush=True)
         is_resume = args.resume_run is not None
         context = (
             pipeline.open_run(config, args.resume_run)
@@ -94,6 +95,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "stage": "initialization",
             },
         )
+        print("[2/5] Preparing benchmark dataset...", flush=True)
         normalized_path = context.run_dir / "dataset" / "normalized_dataset.jsonl"
         if not is_resume or not normalized_path.is_file():
             dataset_result = pipeline.prepare_dataset(config, context)
@@ -117,6 +119,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"confidence={dataset_result.detection_confidence:.3f}"
             )
         print(f"Run {'resumed' if is_resume else 'initialized'}: {context.run_dir}")
+        print("[3/5] Running Base/Fine inference...", flush=True)
         inference_result = asyncio.run(
             pipeline.run_inference(config, context, resume=is_resume)
         )
@@ -127,6 +130,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"failed={inference_result.failed_samples}, "
             f"skipped={inference_result.skipped_samples}"
         )
+        print("[4/5] Running Judge evaluation...", flush=True)
         evaluation_result = asyncio.run(
             pipeline.run_evaluation(config, context, resume=is_resume)
         )
@@ -137,6 +141,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"skipped={evaluation_result.skipped_samples}, "
             f"reused={evaluation_result.reused_samples}"
         )
+        print("[5/5] Generating benchmark reports...", flush=True)
         report_result = pipeline.generate_reports(config, context)
         print(f"JSON report: {report_result.report_json_path}")
         print(f"Markdown report: {report_result.report_markdown_path}")

@@ -131,6 +131,19 @@ class JudgeEngine:
             nonlocal completed
             results[result.id] = result
             completed += 1
+
+            progress_interval = max(1, (total + 9) // 10)
+            if (
+                completed == 1
+                or completed == total
+                or completed % progress_interval == 0
+            ):
+                percent = 100.0 * completed / total if total else 100.0
+                print(
+                    f"      Judge: {completed}/{total} ({percent:.0f}%)",
+                    flush=True,
+                )
+
             _LOGGER.info(
                 "Judge sample completed",
                 extra={
