@@ -9,7 +9,7 @@ models:
     # Project #1's handoff replaces this URL and model name before validation.
     base_url: http://project1-handoff.invalid/v1
     name: project1-base-placeholder
-    api_key: ${LITELLM_API_KEY}
+    api_key: ${PROJECT1_LITELLM_API_KEY}
     timeout_seconds: 60
     generation_parameters:
       temperature: 0
@@ -19,7 +19,7 @@ models:
     # Project #1's handoff replaces this URL and model name before validation.
     base_url: http://project1-handoff.invalid/v1
     name: project1-fine-tuned-placeholder
-    api_key: ${LITELLM_API_KEY}
+    api_key: ${PROJECT1_LITELLM_API_KEY}
     timeout_seconds: 60
     generation_parameters:
       temperature: 0

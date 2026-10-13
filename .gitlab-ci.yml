@@ -20,6 +20,7 @@ phase1_benchmark:
       : "${PROJECT1_UPSTREAM_JOB_ID:?PROJECT1_UPSTREAM_JOB_ID is required}"
       : "${PROJECT1_BENCHMARK_FILE:?PROJECT1_BENCHMARK_FILE is required}"
       : "${PROJECT1_ARTIFACT_READ_TOKEN:?PROJECT1_ARTIFACT_READ_TOKEN is required}"
+      : "${PROJECT1_LITELLM_API_KEY:?PROJECT1_LITELLM_API_KEY is required}"
       : "${LITELLM_API_KEY:?LITELLM_API_KEY is required}"
 
       if ! printf '%s' "$PROJECT1_UPSTREAM_PROJECT_ID" | grep -Eq '^[0-9]*[1-9][0-9]*$'; then
