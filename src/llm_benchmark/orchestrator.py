@@ -24,8 +24,8 @@ from llm_benchmark.inference.engine import InferenceEngine
 from llm_benchmark.inference.models import InferenceRunResult
 from llm_benchmark.metrics.calculator import BenchmarkMetricsCalculator
 from llm_benchmark.reporting.cost import (
-    JudgeCost,
-    estimate_judge_cost,
+    JudgeCostComparison,
+    estimate_reference_costs,
     load_pricing,
 )
 from llm_benchmark.reporting.generator import ReportGenerator
@@ -213,7 +213,7 @@ class BenchmarkPipeline:
         result: ReportGenerationResult,
         validation_status: str,
     ) -> None:
-        """Render the self-contained Persian RTL summary beside the other reports.
+        """Render the self-contained Persian and English summary dashboards.
 
         This artifact is additive: it never modifies or invalidates the existing
         report artifacts, and it degrades gracefully when the optional report
@@ -235,11 +235,10 @@ class BenchmarkPipeline:
             judge_results = []
         token_summary = summarize_token_usage(inference_responses, judge_results)
 
-        judge_cost = _empty_judge_cost()
+        judge_costs = _empty_judge_costs()
         pricing = _load_pricing_config(_config_dir(manifest))
         if pricing is not None:
-            judge_cost = estimate_judge_cost(
-                judge_name=config.models.judge.name,
+            judge_costs = estimate_reference_costs(
                 judge_usage=token_summary.judge,
                 pricing=pricing,
             )
@@ -261,11 +260,17 @@ class BenchmarkPipeline:
             judge_duration_seconds=self._judge_duration,
             report_context=self._report_context,
             token_summary=token_summary,
-            judge_cost=judge_cost,
+            actual_judge_name=config.models.judge.name,
+            judge_costs=judge_costs,
         )
-        html = render_benchmark_summary_html(data)
-        LocalArtifactStore(context.run_dir).write_text(
-            "reports/benchmark_summary.html", html
+        artifact_store = LocalArtifactStore(context.run_dir)
+        artifact_store.write_text(
+            "reports/benchmark_summary.html",
+            render_benchmark_summary_html(data, locale="fa"),
+        )
+        artifact_store.write_text(
+            "reports/benchmark_summary_en.html",
+            render_benchmark_summary_html(data, locale="en"),
         )
 
 
@@ -275,13 +280,11 @@ def _config_dir(manifest: RunManifest) -> Path:
     return Path(manifest.config_source).parent
 
 
-def _empty_judge_cost() -> JudgeCost:
-    return JudgeCost(
-        priced=False,
-        model_display=None,
+def _empty_judge_costs() -> JudgeCostComparison:
+    return JudgeCostComparison(
         currency="USD",
         snapshot_date="",
-        kind="none",
+        estimates=(),
     )
 
 

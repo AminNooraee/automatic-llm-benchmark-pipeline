@@ -21,7 +21,11 @@ from llm_benchmark.inference.models import (
     ModelResponseStatus,
     SampleInferenceStatus,
 )
-from llm_benchmark.reporting.cost import estimate_judge_cost, load_pricing
+from llm_benchmark.reporting.cost import (
+    estimate_judge_cost,
+    estimate_reference_costs,
+    load_pricing,
+)
 from llm_benchmark.reporting.token_usage import RoleUsage, summarize_token_usage
 
 
@@ -191,4 +195,66 @@ def test_incomplete_usage_and_invalid_pricing_are_unavailable() -> None:
     )
     assert not unavailable.priced
     assert unavailable.snapshot_date == "2026-10-14"
+
+
+def test_actual_judge_workload_is_priced_against_all_reference_models() -> None:
+    pricing = load_pricing(ROOT / "configs" / "judge_pricing.yaml")
+    usage = RoleUsage(
+        expected_successful=1,
+        reported=1,
+        available=1,
+        prompt_tokens=2321,
+        completion_tokens=590,
+        total_tokens=2911,
+    )
+
+    comparison = estimate_reference_costs(judge_usage=usage, pricing=pricing)
+    estimates = {item.model_display: item for item in comparison.estimates}
+
+    assert comparison.snapshot_date == "2026-10-14"
+    assert set(estimates) == {
+        "OpenAI GPT-5.6 Sol",
+        "Anthropic Claude Sonnet 5.5",
+        "DeepSeek V4-Pro",
+    }
+    assert estimates["OpenAI GPT-5.6 Sol"].cost == pytest.approx(0.021084)
+    assert estimates["Anthropic Claude Sonnet 5.5"].cost == pytest.approx(
+        0.010542
+    )
+    deepseek = estimates["DeepSeek V4-Pro"]
+    assert deepseek.kind == "range"
+    assert deepseek.cost_low == pytest.approx(0.00270006)
+    assert deepseek.cost_high == pytest.approx(0.00540012)
+
+
+def test_one_invalid_reference_price_does_not_suppress_other_estimates() -> None:
+    pricing = load_pricing(ROOT / "configs" / "judge_pricing.yaml")
+    pricing["models"][1]["pricing"]["input_per_million"] = "invalid"
+
+    comparison = estimate_reference_costs(
+        judge_usage=_complete_usage(),
+        pricing=pricing,
+    )
+
+    assert [item.priced for item in comparison.estimates] == [True, False, True]
+
+
+def test_incomplete_usage_makes_every_reference_estimate_unavailable() -> None:
+    pricing = load_pricing(ROOT / "configs" / "judge_pricing.yaml")
+    incomplete = RoleUsage(
+        expected_successful=2,
+        reported=1,
+        available=1,
+        prompt_tokens=2321,
+        completion_tokens=590,
+        total_tokens=2911,
+    )
+
+    comparison = estimate_reference_costs(
+        judge_usage=incomplete,
+        pricing=pricing,
+    )
+
+    assert len(comparison.estimates) == 3
+    assert all(not item.priced for item in comparison.estimates)
 

@@ -1,11 +1,8 @@
 # Version-controlled judge pricing snapshot.
 #
-# Used by the benchmark HTML summary to estimate the JUDGE model's API cost
-# from reported token usage. No network calls are made; these are static rates.
-#
-# Matching is by judge model `name` (case-insensitive), optionally via `aliases`.
-# A judge model that is not listed here yields "no price" (rendered ناموجود),
-# never an invented number.
+# Used by the benchmark HTML summaries to estimate what the actual judge
+# workload would cost with each reference model. No network calls are made;
+# these are static rates, independent of the actual judge model name.
 
 snapshot_date: "2026-10-14"
 currency: "USD"

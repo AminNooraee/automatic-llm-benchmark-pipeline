@@ -141,6 +141,8 @@ def test_complete_mocked_benchmark_run_generates_valid_release_artifacts(
         "reports/report.json",
         "reports/report.md",
         "reports/samples.csv",
+        "reports/benchmark_summary.html",
+        "reports/benchmark_summary_en.html",
     ]
     for relative in required_artifacts:
         assert (context.run_dir / relative).is_file(), relative

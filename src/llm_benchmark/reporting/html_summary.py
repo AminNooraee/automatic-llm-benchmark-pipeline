@@ -1,42 +1,101 @@
-"""Self-contained Persian RTL benchmark summary page.
-
-Renders a single static ``benchmark_summary.html`` that aggregates the
-benchmark report, validation/reproducibility metadata, training report context,
-stage durations, per-role token usage, and an estimated judge API cost.
-
-The page is fully self-contained: no CDN, no external JavaScript or fonts, no
-network access. All dataset and user content is HTML-escaped; technical values
-(model names, run IDs, hashes, paths, numbers) are rendered left-to-right.
-Missing data is rendered as ``ناموجود`` and incomplete token coverage as
-``ناقص`` rather than as misleading zeros.
-"""
+"""Shared bilingual, self-contained benchmark dashboard renderer."""
 
 from __future__ import annotations
 
 import html
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
 from llm_benchmark.config.handoff import ReportContext
 from llm_benchmark.metrics.models import ResolvedSampleResult
-from llm_benchmark.reporting.cost import JudgeCost
+from llm_benchmark.reporting.cost import JudgeCost, JudgeCostComparison
 from llm_benchmark.reporting.models import BenchmarkReport
-from llm_benchmark.reporting.token_usage import TokenUsageSummary
+from llm_benchmark.reporting.token_usage import RoleUsage, TokenUsageSummary
 
-MISSING = "ناموجود"
-INCOMPLETE = "ناقص"
+Locale = Literal["fa", "en"]
 
-_PERSIAN_WINNERS = {
-    "base": "مدل پایه",
-    "fine_tuned": "مدل فاین‌تیون‌شده",
-    "tie": "مساوی",
+_LABELS = {
+    "fa": {
+        "dir": "rtl", "title": "خلاصه بنچمارک مدل",
+        "subtitle": "نمای مدیریتی مقایسه مدل پایه و مدل فاین‌تیون‌شده",
+        "summary": "خلاصهٔ نتیجه", "durations": "زمان اجرا",
+        "training": "تنظیمات آموزش",
+        "tokens_cost": "مصرف توکن و هزینهٔ تخمینی داوری",
+        "criteria": "معیارهای ارزیابی", "samples": "چند نمونهٔ منتخب",
+        "validation": "اعتبارسنجی و بازتولیدپذیری",
+        "total_samples": "مجموع نمونه‌ها", "fine_wins": "پیروزی مدل فاین‌تیون‌شده",
+        "base_wins": "پیروزی مدل پایه", "score_lift": "بهبود امتیاز",
+        "fine": "فاین‌تیون‌شده", "base": "مدل پایه", "tie": "مساوی",
+        "score_comparison": "مقایسه میانگین امتیاز",
+        "training_duration": "مدت آموزش", "inference_duration": "مدت استنباط",
+        "judge_duration": "مدت داوری", "total_duration": "مجموع زمان هسته",
+        "minute": "دقیقه", "second": "ثانیه", "model_name": "نام مدل پایه",
+        "fine_model": "مدل فاین‌تیون‌شده", "epochs": "تعداد اپاک",
+        "learning_rate": "نرخ یادگیری", "batch_size": "اندازه دسته",
+        "cutoff_len": "طول برش", "lora_rank": "رتبه LoRA",
+        "lora_alpha": "ضریب LoRA", "lora_dropout": "ریزش LoRA",
+        "role": "نقش", "input_tokens": "توکن ورودی",
+        "output_tokens": "توکن خروجی", "total_tokens": "مجموع توکن",
+        "coverage": "پوشش", "judge": "داور", "actual_judge": "مدل داور واقعی",
+        "same_workload": "برآورد هزینه همین حجم داوری",
+        "pricing_basis": "مبنای قیمت‌گذاری",
+        "cost_disclaimer": "هزینه‌ها بر پایه مصرف توکن گزارش‌شده داور تخمین زده شده‌اند و روش توکن‌سازی ارائه‌دهندگان ممکن است متفاوت باشد.",
+        "question": "سؤال", "base_answer": "پاسخ مدل پایه",
+        "fine_answer": "پاسخ Fine-tuned", "winner": "برنده",
+        "scores": "امتیازها", "judge_reason": "دلیل Judge",
+        "fine_samples": "پیروزی‌های قوی مدل فاین‌تیون‌شده",
+        "base_samples": "پیروزی‌های مدل پایه", "tie_samples": "نمونه مساوی",
+        "no_samples": "نمونه ارزیابی‌شده‌ای در دسترس نیست.",
+        "validation_status": "وضعیت اعتبارسنجی", "run_id": "شناسه اجرا",
+        "pipeline_version": "نسخه خط لوله", "random_seed": "بذر تصادفی",
+        "technical_details": "جزئیات فنی", "generated_at": "زمان تولید",
+        "config_fingerprint": "اثر انگشت پیکربندی", "dataset_hash": "هش مجموعه داده",
+        "dataset_path": "مسیر مجموعه داده", "missing": "ناموجود",
+        "incomplete": "ناقص", "pass": "موفق",
+    },
+    "en": {
+        "dir": "ltr", "title": "Model Benchmark Summary",
+        "subtitle": "Executive comparison of the base and fine-tuned models",
+        "summary": "Executive Summary", "durations": "Execution Times",
+        "training": "Training Configuration",
+        "tokens_cost": "Token Usage and Estimated Judge Cost",
+        "criteria": "Evaluation Criteria", "samples": "Representative Samples",
+        "validation": "Validation and Reproducibility",
+        "total_samples": "Total Samples", "fine_wins": "Fine-tuned Wins",
+        "base_wins": "Base Wins", "score_lift": "Score Lift",
+        "fine": "Fine-tuned", "base": "Base", "tie": "Tie",
+        "score_comparison": "Average Score Comparison",
+        "training_duration": "Training Duration", "inference_duration": "Inference Duration",
+        "judge_duration": "Judge Duration", "total_duration": "Total Core Duration",
+        "minute": "min", "second": "sec", "model_name": "Base Model",
+        "fine_model": "Fine-tuned Model", "epochs": "Epochs",
+        "learning_rate": "Learning Rate", "batch_size": "Batch Size",
+        "cutoff_len": "Cutoff Length", "lora_rank": "LoRA Rank",
+        "lora_alpha": "LoRA Alpha", "lora_dropout": "LoRA Dropout",
+        "role": "Role", "input_tokens": "Input Tokens",
+        "output_tokens": "Output Tokens", "total_tokens": "Total Tokens",
+        "coverage": "Coverage", "judge": "Judge", "actual_judge": "Actual Judge Model",
+        "same_workload": "Estimated cost for this judge workload",
+        "pricing_basis": "Pricing snapshot",
+        "cost_disclaimer": "Costs are estimated from the tokens reported by the current judge; provider tokenization may differ.",
+        "question": "Question", "base_answer": "Base Model Answer",
+        "fine_answer": "Fine-tuned Answer", "winner": "Winner",
+        "scores": "Scores", "judge_reason": "Judge Reason",
+        "fine_samples": "Strong Fine-tuned Wins", "base_samples": "Base Wins",
+        "tie_samples": "Tie", "no_samples": "No evaluated samples are available.",
+        "validation_status": "Validation Status", "run_id": "Run ID",
+        "pipeline_version": "Pipeline Version", "random_seed": "Random Seed",
+        "technical_details": "Technical Details", "generated_at": "Generated At",
+        "config_fingerprint": "Configuration Fingerprint", "dataset_hash": "Dataset Hash",
+        "dataset_path": "Dataset Path", "missing": "Unavailable",
+        "incomplete": "Incomplete", "pass": "PASS",
+    },
 }
 
 
 @dataclass(frozen=True)
 class SummaryData:
-    """Everything needed to render the benchmark summary page."""
-
     report: BenchmarkReport
     validation_status: str
     random_seed: int
@@ -48,7 +107,8 @@ class SummaryData:
     judge_duration_seconds: float | None
     report_context: ReportContext | None
     token_summary: TokenUsageSummary
-    judge_cost: JudgeCost
+    actual_judge_name: str
+    judge_costs: JudgeCostComparison
 
 
 def _esc(value: object) -> str:
@@ -56,531 +116,173 @@ def _esc(value: object) -> str:
 
 
 def _ltr(value: object) -> str:
-    """Render a technical value in a left-to-right inline run."""
-
     return f'<span class="ltr" dir="ltr">{_esc(value)}</span>'
 
 
 def _auto(value: object, css_class: str = "user-content") -> str:
-    """Render user/dataset-authored text with automatic bidi detection."""
-
     return f'<span class="{css_class}" dir="auto">{_esc(value)}</span>'
 
 
-def _missing_or(value: object, fallback: str = MISSING) -> str:
+def _missing(labels: dict[str, str]) -> str:
+    return f'<span class="missing">{labels["missing"]}</span>'
+
+
+def _number(value: float | None, labels: dict[str, str], digits: int = 4) -> str:
+    return _missing(labels) if value is None else _ltr(f"{value:.{digits}g}")
+
+
+def _duration(value: float | None, labels: dict[str, str]) -> str:
     if value is None:
-        return f'<span class="missing">{fallback}</span>'
-    return str(value)
-
-
-def _fmt_number(value: float | None, digits: int = 4) -> str:
-    if value is None:
-        return f'<span class="missing">{MISSING}</span>'
-    text = f"{value:.{digits}g}"
-    return _ltr(text)
-
-
-def _fmt_duration(seconds: float | None) -> str:
-    if seconds is None:
-        return f'<span class="missing">{MISSING}</span>'
-    total = max(0.0, float(seconds))
-    minutes, secs = divmod(round(total), 60)
+        return _missing(labels)
+    minutes, seconds = divmod(round(max(0.0, float(value))), 60)
     if minutes:
-        return f'{_ltr(f"{minutes} دقیقه و {secs} ثانیه")}'
-    return f'{_ltr(f"{secs} ثانیه")}'
+        return f'{_ltr(minutes)} {labels["minute"]} · {_ltr(seconds)} {labels["second"]}'
+    return f'{_ltr(seconds)} {labels["second"]}'
 
 
-def _fmt_tokens(
-    usage,
-    field: str,
-) -> str:
-    """Render one token field, honoring complete / incomplete / missing."""
-
+def _token(usage: RoleUsage, field: str, labels: dict[str, str]) -> str:
     if usage.missing:
-        return f'<span class="missing">{MISSING}</span>'
+        return _missing(labels)
     if not usage.complete:
-        return f'<span class="incomplete">{INCOMPLETE}</span>'
+        return f'<span class="incomplete">{labels["incomplete"]}</span>'
     value = getattr(usage, field)
+    return _missing(labels) if value is None else _ltr(f"{value:,}")
+
+
+def _cost(value: JudgeCost, labels: dict[str, str]) -> str:
+    if not value.priced:
+        return _missing(labels)
+    if value.kind == "flat" and value.cost is not None:
+        return _ltr(f"{value.cost:.6f} {value.currency}")
+    if value.kind == "range" and value.cost_low is not None and value.cost_high is not None:
+        return _ltr(f"{value.cost_low:.6f} – {value.cost_high:.6f} {value.currency}")
+    return _missing(labels)
+
+
+def _winner(value: str | None, labels: dict[str, str]) -> str:
     if value is None:
-        return f'<span class="missing">{MISSING}</span>'
-    return _ltr(value)
+        return labels["missing"]
+    return {"base": labels["base"], "fine_tuned": labels["fine"], "tie": labels["tie"]}.get(value, value)
 
 
-def _fmt_cost(cost: JudgeCost) -> str:
-    if not cost.priced:
-        return f'<span class="missing">{MISSING}</span>'
-    if cost.kind == "flat" and cost.cost is not None:
-        return _ltr(f"{cost.cost:.4f} {cost.currency}")
-    if cost.kind == "range" and cost.cost_low is not None and cost.cost_high is not None:
-        return _ltr(f"{cost.cost_low:.4f} – {cost.cost_high:.4f} {cost.currency}")
-    return f'<span class="missing">{MISSING}</span>'
-
-
-def _conclusion(report: BenchmarkReport) -> str:
+def _conclusion(report: BenchmarkReport, locale: Locale) -> str:
     metrics = report.aggregate_metrics
     if metrics.successful_evaluations == 0:
-        return "به دلیل نبود هیچ ارزیابی موفق، نتیجه‌گیری مقایسه‌ای ممکن نیست."
-    base_wins = metrics.base_model_wins
-    fine_wins = metrics.fine_tuned_model_wins
-    if fine_wins > base_wins:
-        return (
-            "مدل فاین‌تیون‌شده در این بنچمارک نسبت به مدل پایه عملکرد بهتری "
-            "نشان داد."
-        )
-    if base_wins > fine_wins:
-        return "مدل پایه در این بنچمارک نسبت به مدل فاین‌تیون‌شده عملکرد بهتری نشان داد."
-    return "عملکرد دو مدل در این بنچمارک تقریباً هم‌ارز بود."
+        return "هیچ ارزیابی موفقی برای نتیجه‌گیری وجود ندارد." if locale == "fa" else "No successful evaluations are available."
+    if metrics.fine_tuned_model_wins > metrics.base_model_wins:
+        return "مدل فاین‌تیون‌شده عملکرد بهتری نشان داد." if locale == "fa" else "The fine-tuned model performed better."
+    if metrics.base_model_wins > metrics.fine_tuned_model_wins:
+        return "مدل پایه عملکرد بهتری نشان داد." if locale == "fa" else "The base model performed better."
+    return "عملکرد دو مدل هم‌ارز بود." if locale == "fa" else "The two models performed equally."
 
 
-def _winner_label(resolved_value: str | None) -> str:
-    if resolved_value is None:
-        return f'<span class="missing">{MISSING}</span>'
-    return _PERSIAN_WINNERS.get(resolved_value, _esc(resolved_value))
+def _select_samples(samples: list[ResolvedSampleResult]):
+    successful = [s for s in samples if s.evaluation_status.value == "success" and s.winner is not None]
+
+    def gap(sample: ResolvedSampleResult, fine_wins: bool) -> float:
+        difference = (sample.fine_tuned_score or 0) - (sample.base_score or 0)
+        return difference if fine_wins else -difference
+
+    fine = sorted((s for s in successful if s.winner.value == "fine_tuned"), key=lambda s: gap(s, True), reverse=True)[:3]
+    base = sorted((s for s in successful if s.winner.value == "base"), key=lambda s: gap(s, False), reverse=True)[:2]
+    tie = [s for s in successful if s.winner.value == "tie"][:1]
+    return fine, base, tie
 
 
-def _score_or(value: float | None) -> str:
-    if value is None:
-        return f'<span class="missing">{MISSING}</span>'
-    return _ltr(f"{value:.4g}")
-
-
-def _render_metric_row(label: str, value_html: str) -> str:
-    return f'<tr><th>{_esc(label)}</th><td>{value_html}</td></tr>'
-
-
-def _render_samples(samples: list[ResolvedSampleResult]) -> list[str]:
-    """Render a group of collapsible samples, ordered as given."""
-
-    lines: list[str] = []
-    for sample in samples:
-        winner = _winner_label(sample.winner.value if sample.winner else None)
-        base_score = _score_or(sample.base_score)
-        fine_score = _score_or(sample.fine_tuned_score)
-        summary = (
-            f'نمونه «{_ltr(sample.id)}» — برنده: {winner} — '
-            f'امتیاز پایه: {base_score}، فاین‌تیون‌شده: {fine_score}'
-        )
-        reason = sample.judge_reason or sample.error_message or MISSING
-        lines.append(f"<details>")
-        lines.append(f'  <summary>{summary}</summary>')
-        lines.append('  <div class="sample-body">')
-        lines.append(f'    <p><strong>سؤال:</strong><br>{_auto(sample.prompt)}</p>')
-        lines.append(
-            f'    <p><strong>پاسخ مدل پایه:</strong><br>'
-            f"{_auto(sample.base_response, 'answer')}</p>"
-        )
-        lines.append(
-            f'    <p><strong>پاسخ مدل فاین‌تیون‌شده:</strong><br>'
-            f"{_auto(sample.fine_tuned_response, 'answer')}</p>"
-        )
-        lines.append(
-            f'    <p><strong>امتیاز پایه / فاین‌تیون‌شده:</strong> '
-            f"{base_score} / {fine_score}</p>"
-        )
-        lines.append(f'    <p><strong>دلیل Judge:</strong><br>{_auto(reason)}</p>')
-        lines.append("  </div>")
-        lines.append("</details>")
-    return lines
-
-
-def _select_samples(
-    samples: list[ResolvedSampleResult],
-) -> tuple[list[ResolvedSampleResult], list[ResolvedSampleResult], ResolvedSampleResult | None]:
-    successful = [
-        s
-        for s in samples
-        if s.evaluation_status.value == "success" and s.winner is not None
-    ]
-
-    def _gap(sample: ResolvedSampleResult, model_wins: bool) -> float:
-        if model_wins:
-            return (sample.fine_tuned_score or 0) - (sample.base_score or 0)
-        return (sample.base_score or 0) - (sample.fine_tuned_score or 0)
-
-    fine_wins = [
-        s for s in successful if s.winner.value == "fine_tuned"
-    ]
-    base_wins = [s for s in successful if s.winner.value == "base"]
-    ties = [s for s in successful if s.winner.value == "tie"]
-
-    fine_wins.sort(key=lambda s: _gap(s, True), reverse=True)
-    base_wins.sort(key=lambda s: _gap(s, False), reverse=True)
-
-    return fine_wins[:3], base_wins[:2], (ties[0] if ties else None)
-
-
-def _render_criteria(report: BenchmarkReport) -> list[str]:
-    lines = [
-        '<table class="table criteria">',
-        "<thead><tr><th>معیار</th><th>وزن</th><th>محدوده</th><th>توضیح</th></tr></thead>",
-        "<tbody>",
-    ]
-    for criterion in report.evaluation_criteria:
-        lines.append(
-            "<tr>"
-            f"<td>{_auto(criterion.name)}</td>"
-            f"<td>{_ltr(f'{criterion.weight:.4g}')}</td>"
-            f"<td>{_ltr(f'{criterion.minimum:g}–{criterion.maximum:g}')}</td>"
-            f"<td>{_auto(criterion.description)}</td>"
-            "</tr>"
-        )
-    lines.append("</tbody>")
-    lines.append("</table>")
-    return lines
-
-
-def _render_token_table(summary: TokenUsageSummary) -> list[str]:
-    lines = [
-        '<table class="table tokens">',
-        "<thead><tr><th>نقش</th><th>توکن ورودی</th>"
-        "<th>توکن خروجی</th><th>مجموع توکن</th><th>پوشش</th></tr></thead>",
-        "<tbody>",
-    ]
-    rows = (
-        ("مدل پایه", summary.base),
-        ("مدل فاین‌تیون‌شده", summary.fine_tuned),
-        ("داور", summary.judge),
-    )
-    for label, usage in rows:
-        coverage = _coverage_label(usage)
-        lines.append(
-            "<tr>"
-            f"<td>{_esc(label)}</td>"
-            f"<td>{_fmt_tokens(usage, 'prompt_tokens')}</td>"
-            f"<td>{_fmt_tokens(usage, 'completion_tokens')}</td>"
-            f"<td>{_fmt_tokens(usage, 'total_tokens')}</td>"
-            f"<td>{coverage}</td>"
-            "</tr>"
-        )
-    lines.append("</tbody>")
-    lines.append("</table>")
-    return lines
-
-
-def _coverage_label(usage) -> str:
-    if usage.missing:
-        return f'<span class="missing">{MISSING}</span>'
-    if usage.complete:
-        return _ltr(f"{usage.available}/{usage.expected_successful}")
+def _criterion_averages(report: BenchmarkReport, name: str):
+    pairs = [(s.criteria_scores or {}).get(name) for s in report.per_sample_results]
+    scores = [value for value in pairs if value is not None]
+    if not scores:
+        return None, None
     return (
-        f'<span class="incomplete">{INCOMPLETE} '
-        f"{_ltr(f'{usage.available}/{usage.expected_successful}')}</span>"
+        sum(value.base_model for value in scores) / len(scores),
+        sum(value.fine_tuned_model for value in scores) / len(scores),
     )
 
 
-def _render_training_context(context: ReportContext | None) -> list[str]:
-    lines = ['<table class="table config">']
-    if context is None:
-        rows = (
-            ("نام مدل پایه", MISSING),
-            ("تعداد اپاکش (epochs)", MISSING),
-            ("نرخ یادگیری (learning rate)", MISSING),
-            ("اندازهٔ دسته (batch size)", MISSING),
-            ("طول برش (cutoff length)", MISSING),
-            ("رتبهٔ LoRA (rank)", MISSING),
-            ("ضریب LoRA (alpha)", MISSING),
-            ("ریزش LoRA (dropout)", MISSING),
-        )
-        for label, value in rows:
-            lines.append(
-                _render_metric_row(label, f'<span class="missing">{MISSING}</span>')
-            )
-        lines.append("</table>")
-        return lines
-
-    training = context.training
-    lora = training.lora
+def _render_training(data: SummaryData, labels: dict[str, str]) -> str:
+    training = data.report_context.training if data.report_context else None
+    lora = training.lora if training else None
     rows = (
-        ("نام مدل پایه", _ltr(training.model_name)),
-        ("تعداد اپاکش (epochs)", _ltr(training.epochs)),
-        ("نرخ یادگیری (learning rate)", _ltr(training.learning_rate)),
-        ("اندازهٔ دسته (batch size)", _ltr(training.batch_size)),
-        ("طول برش (cutoff length)", _ltr(training.cutoff_len)),
-        (
-            "رتبهٔ LoRA (rank)",
-            _ltr(lora.rank) if lora else f'<span class="missing">{MISSING}</span>',
-        ),
-        (
-            "ضریب LoRA (alpha)",
-            _ltr(lora.alpha) if lora else f'<span class="missing">{MISSING}</span>',
-        ),
-        (
-            "ریزش LoRA (dropout)",
-            _ltr(lora.dropout) if lora else f'<span class="missing">{MISSING}</span>',
-        ),
+        (labels["model_name"], _ltr(training.model_name) if training else _missing(labels)),
+        (labels["fine_model"], _ltr(data.report.model_information.fine_tuned.name)),
+        (labels["epochs"], _ltr(training.epochs) if training else _missing(labels)),
+        (labels["learning_rate"], _ltr(training.learning_rate) if training else _missing(labels)),
+        (labels["batch_size"], _ltr(training.batch_size) if training else _missing(labels)),
+        (labels["cutoff_len"], _ltr(training.cutoff_len) if training else _missing(labels)),
+        (labels["lora_rank"], _ltr(lora.rank) if lora else _missing(labels)),
+        (labels["lora_alpha"], _ltr(lora.alpha) if lora else _missing(labels)),
+        (labels["lora_dropout"], _ltr(lora.dropout) if lora else _missing(labels)),
     )
-    for label, value in rows:
-        lines.append(_render_metric_row(label, value))
-    lines.append("</table>")
-    return lines
+    return "".join(f'<div class="meta-item"><span>{label}</span><strong>{value}</strong></div>' for label, value in rows)
 
 
-def render_benchmark_summary_html(data: SummaryData) -> str:
-    report = data.report
-    metrics = report.aggregate_metrics
-    averages = metrics.average_scores_per_model
-    rates = metrics.win_rate_percentage
-    usage = data.token_summary
-    fine_wins, base_wins, tie = _select_samples(report.per_sample_results)
+def _render_tokens(data: SummaryData, labels: dict[str, str]) -> str:
+    rows = ((labels["base"], data.token_summary.base), (labels["fine"], data.token_summary.fine_tuned), (labels["judge"], data.token_summary.judge))
+    body = []
+    for name, usage in rows:
+        coverage = _missing(labels) if usage.missing else (_ltr(f"{usage.available}/{usage.expected_successful}") if usage.complete else f'<span class="incomplete">{labels["incomplete"]}</span>')
+        body.append(f"<tr><td>{name}</td><td>{_token(usage, 'prompt_tokens', labels)}</td><td>{_token(usage, 'completion_tokens', labels)}</td><td>{_token(usage, 'total_tokens', labels)}</td><td>{coverage}</td></tr>")
+    return f'<div class="table-wrap"><table><thead><tr><th>{labels["role"]}</th><th>{labels["input_tokens"]}</th><th>{labels["output_tokens"]}</th><th>{labels["total_tokens"]}</th><th>{labels["coverage"]}</th></tr></thead><tbody>{"".join(body)}</tbody></table></div>'
 
-    score_diff_html = _score_or(
-        (averages.fine_tuned_model - averages.base_model)
-        if averages.base_model is not None
-        and averages.fine_tuned_model is not None
-        else None
-    )
 
-    total_core = None
-    if (
-        data.training_duration_seconds is not None
-        and data.inference_duration_seconds is not None
-        and data.judge_duration_seconds is not None
-    ):
-        total_core = (
-            data.training_duration_seconds
-            + data.inference_duration_seconds
-            + data.judge_duration_seconds
-        )
+def _render_costs(data: SummaryData, labels: dict[str, str]) -> str:
+    rows = "".join(f'<div class="price-row"><span class="ltr" dir="ltr">{_esc(item.model_display)}</span><strong>{_cost(item, labels)}</strong></div>' for item in data.judge_costs.estimates)
+    if not rows:
+        rows = f'<div class="price-row">{_missing(labels)}</div>'
+    snapshot = _ltr(data.judge_costs.snapshot_date) if data.judge_costs.snapshot_date else _missing(labels)
+    return f'<div class="judge-card"><span>{labels["actual_judge"]}</span><strong>{_ltr(data.actual_judge_name)}</strong></div><div class="pricing"><h3>{labels["same_workload"]}</h3><div class="price-list">{rows}</div><p class="pricing-date">{labels["pricing_basis"]}: {snapshot}</p><p class="note">{labels["cost_disclaimer"]}</p></div>'
 
-    cost = data.judge_cost
-    cost_model = cost.model_display or MISSING
 
-    token_warning = ""
-    if usage.any_incomplete:
-        token_warning = (
-            '<p class="note">توجه: میزان مصرف توکن برای همهٔ درخواست‌های موفق '
-            "در دسترس نبود؛ اعداد نشان‌داده‌شده ممکن است کامل نباشند.</p>"
-        )
+def _render_criteria(data: SummaryData, labels: dict[str, str]) -> str:
+    cards = []
+    for criterion in data.report.evaluation_criteria:
+        base, fine = _criterion_averages(data.report, criterion.name)
+        cards.append(f'<article class="criterion-card"><div class="criterion-head"><strong>{_auto(criterion.name)}</strong><span>{_ltr(f"{criterion.weight * 100:.0f}%")}</span></div><p>{_auto(criterion.description)}</p><div class="criterion-scores"><span>{labels["base"]}<b>{_number(base, labels)}</b></span><span>{labels["fine"]}<b>{_number(fine, labels)}</b></span></div></article>')
+    return "".join(cards)
 
-    cost_note = (
-        '<p class="note">هزینهٔ برآوردی فقط بر اساس مصرف توکن گزارش‌شده توسط داور '
-        "محاسبه شده و ممکن است با روش شمارش توکن ارائه‌دهنده متفاوت باشد.</p>"
-    )
 
-    parts: list[str] = []
-    parts.append("<!doctype html>")
-    parts.append('<html lang="fa" dir="rtl">')
-    parts.append("<head>")
-    parts.append('<meta charset="UTF-8">')
-    parts.append(
-        '<meta name="viewport" content="width=device-width, initial-scale=1">'
-    )
-    parts.append("<title>خلاصهٔ بنچمارک</title>")
-    parts.append("<style>")
-    parts.append(_CSS)
-    parts.append("</style>")
-    parts.append("</head>")
-    parts.append("<body>")
-    parts.append("<main>")
-    parts.append("<h1>خلاصهٔ بنچمارک مدل</h1>")
+def _render_sample(sample: ResolvedSampleResult, labels: dict[str, str]) -> str:
+    winner = _winner(sample.winner.value if sample.winner else None, labels)
+    base_score, fine_score = _number(sample.base_score, labels), _number(sample.fine_tuned_score, labels)
+    reason = sample.judge_reason or sample.error_message or labels["missing"]
+    return f'<details class="sample-card"><summary><span>{_ltr(sample.id)}</span><span class="winner">{labels["winner"]}: {winner}</span><span>{labels["scores"]}: {base_score} / {fine_score}</span></summary><div class="sample-body"><div><strong>{labels["question"]}</strong>{_auto(sample.prompt)}</div><div><strong>{labels["base_answer"]}</strong>{_auto(sample.base_response, "answer")}</div><div><strong>{labels["fine_answer"]}</strong>{_auto(sample.fine_tuned_response, "answer")}</div><div><strong>{labels["judge_reason"]}</strong>{_auto(reason)}</div></div></details>'
 
-    # 1 — result summary
-    parts.append('<section id="summary">')
-    parts.append("<h2>۱. خلاصهٔ نتیجه</h2>")
-    parts.append('<table class="table">')
-    parts.append(_render_metric_row("مجموع نمونه‌ها", _ltr(metrics.total_samples)))
-    parts.append(
-        _render_metric_row(
-            "پیروزی مدل فاین‌تیون‌شده",
-            f"{_ltr(metrics.fine_tuned_model_wins)} ({_ltr(f'{rates.fine_tuned_model:.2f}%')})",
-        )
-    )
-    parts.append(
-        _render_metric_row(
-            "پیروزی مدل پایه",
-            f"{_ltr(metrics.base_model_wins)} ({_ltr(f'{rates.base_model:.2f}%')})",
-        )
-    )
-    parts.append(
-        _render_metric_row(
-            "مساوی",
-            f"{_ltr(metrics.ties)} ({_ltr(f'{rates.ties:.2f}%')})",
-        )
-    )
-    parts.append(
-        _render_metric_row("میانگین امتیاز مدل پایه", _fmt_number(averages.base_model))
-    )
-    parts.append(
-        _render_metric_row(
-            "میانگین امتیاز مدل فاین‌تیون‌شده",
-            _fmt_number(averages.fine_tuned_model),
-        )
-    )
-    parts.append(_render_metric_row("اختلاف امتیاز (فاین‌تیون‌شده − پایه)", score_diff_html))
-    parts.append("</table>")
-    parts.append(f'<p class="conclusion">{_esc(_conclusion(report))}</p>')
-    parts.append("</section>")
 
-    # 2 — durations
-    parts.append('<section id="durations">')
-    parts.append("<h2>۲. زمان اجرا</h2>")
-    parts.append('<table class="table">')
-    parts.append(
-        _render_metric_row(
-            "مدت آموزش (مدل‌سازی)",
-            _fmt_duration(data.training_duration_seconds),
-        )
-    )
-    parts.append(
-        _render_metric_row(
-            "مدت استنباط (پایه + فاین‌تیون‌شده)",
-            _fmt_duration(data.inference_duration_seconds),
-        )
-    )
-    parts.append(
-        _render_metric_row("مدت داوری", _fmt_duration(data.judge_duration_seconds))
-    )
-    parts.append(
-        _render_metric_row("مجموع زمان هسته (آموزش + استنباط + داوری)", _fmt_duration(total_core))
-    )
-    parts.append("</table>")
-    parts.append("</section>")
+def render_benchmark_summary_html(data: SummaryData, *, locale: Locale = "fa") -> str:
+    """Render either locale from one data model and one layout implementation."""
 
-    # 3 — training config
-    parts.append('<section id="training-config">')
-    parts.append("<h2>۳. تنظیمات آموزش</h2>")
-    parts.extend(_render_training_context(data.report_context))
-    parts.append("</section>")
-
-    # 4 — token usage + judge cost
-    parts.append('<section id="tokens-cost">')
-    parts.append("<h2>۴. مصرف توکن و هزینهٔ تخمینی داوری</h2>")
-    parts.extend(_render_token_table(usage))
-    parts.append(token_warning)
-    parts.append('<table class="table cost">')
-    parts.append(_render_metric_row("مدل داور", _ltr(cost.model_display or MISSING)))
-    parts.append(_render_metric_row("هزینهٔ تخمینی داوری", _fmt_cost(cost)))
-    if cost.kind == "range" and cost.range_label:
-        parts.append(
-            _render_metric_row("بازهٔ قیمت", _ltr(f"{cost.range_label} — {cost.currency} / میلیون توکن"))
-        )
-    parts.append("</table>")
-    parts.append(
-        '<p class="pricing-date">مبنای قیمت‌گذاری: '
-        f'{_ltr(cost.snapshot_date) if cost.snapshot_date else _missing_or(None)}</p>'
-    )
-    parts.append(cost_note)
-    parts.append("</section>")
-
-    # 5 — criteria
-    parts.append('<section id="criteria">')
-    parts.append("<h2>۵. معیارهای ارزیابی</h2>")
-    parts.extend(_render_criteria(report))
-    parts.append("</section>")
-
-    # 6 — selected samples
-    parts.append('<section id="samples">')
-    parts.append("<h2>۶. چند نمونهٔ منتخب</h2>")
-    sample_groups = (
-        ("پیروزی‌های قوی مدل فاین‌تیون‌شده", fine_wins),
-        ("پیروزی‌های مدل پایه", base_wins),
-    )
-    rendered_any = False
-    for heading, group in sample_groups:
-        if not group:
-            continue
-        rendered_any = True
-        parts.append(f"<h3>{_esc(heading)}</h3>")
-        parts.extend(_render_samples(group))
-    if tie is not None:
-        rendered_any = True
-        parts.append("<h3>مساوی</h3>")
-        parts.extend(_render_samples([tie]))
-    if not rendered_any:
-        parts.append(f'<p class="conclusion">{_esc("نمونهٔ ارزیابی‌شده‌ای در دسترس نیست.")}</p>')
-    parts.append("</section>")
-
-    # 7 — validation & reproducibility
-    parts.append('<section id="validation">')
-    parts.append("<h2>۷. اعتبارسنجی و بازتولیدپذیری</h2>")
-    parts.append('<table class="table">')
-    parts.append(_render_metric_row("وضعیت اعتبارسنجی", _ltr(data.validation_status)))
-    parts.append(_render_metric_row("بذر تصادفی (random seed)", _ltr(data.random_seed)))
-    parts.append(_render_metric_row("نسخهٔ خط لوله", _ltr(data.pipeline_version)))
-    parts.append(_render_metric_row("شناسهٔ اجرا (run ID)", _ltr(data.run_id)))
-    parts.append("</table>")
-    parts.append("</section>")
-
-    parts.append("</main>")
-    parts.append("</body>")
-    parts.append("</html>")
-    return "\n".join(parts)
+    labels, report = _LABELS[locale], data.report
+    metrics, averages, rates = report.aggregate_metrics, report.aggregate_metrics.average_scores_per_model, report.aggregate_metrics.win_rate_percentage
+    lift = averages.fine_tuned_model - averages.base_model if averages.base_model is not None and averages.fine_tuned_model is not None else None
+    total_duration = data.training_duration_seconds + data.inference_duration_seconds + data.judge_duration_seconds if data.training_duration_seconds is not None and data.inference_duration_seconds is not None and data.judge_duration_seconds is not None else None
+    fine_samples, base_samples, tie_samples = _select_samples(report.per_sample_results)
+    groups = ((labels["fine_samples"], fine_samples), (labels["base_samples"], base_samples), (labels["tie_samples"], tie_samples))
+    samples = "".join(f"<h3>{heading}</h3>" + "".join(_render_sample(item, labels) for item in items) for heading, items in groups if items) or f'<p class="empty">{labels["no_samples"]}</p>'
+    state = "ok" if data.validation_status.lower() == "passed" else "warn"
+    return f"""<!doctype html><html lang="{locale}" dir="{labels['dir']}"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{labels['title']}</title><style>{_CSS}</style></head><body><main>
+<header class="hero"><div><p class="eyebrow">LLM BENCHMARK</p><h1>{labels['title']}</h1><p>{labels['subtitle']}</p></div><span class="status {state}">{labels['pass'] if state == 'ok' else _esc(data.validation_status)}</span></header>
+<section id="summary"><h2>{labels['summary']}</h2><div class="kpi-grid">
+<article class="kpi"><span>{labels['total_samples']}</span><strong>{_ltr(metrics.total_samples)}</strong></article>
+<article class="kpi fine"><span>{labels['fine_wins']}</span><strong>{_ltr(metrics.fine_tuned_model_wins)}</strong></article>
+<article class="kpi base"><span>{labels['base_wins']}</span><strong>{_ltr(metrics.base_model_wins)}</strong></article>
+<article class="kpi"><span>{labels['score_lift']}</span><strong>{_number(lift, labels)}</strong></article></div>
+<div class="win-bar"><span class="fine-segment" style="width:{rates.fine_tuned_model:.4f}%"></span><span class="tie-segment" style="width:{rates.ties:.4f}%"></span><span class="base-segment" style="width:{rates.base_model:.4f}%"></span></div>
+<div class="legend"><span class="fine-dot">{labels['fine']}</span><span class="tie-dot">{labels['tie']}</span><span class="base-dot">{labels['base']}</span></div>
+<div class="score-panel"><h3>{labels['score_comparison']}</h3><div class="score-row"><span>{labels['base']}</span><div><i style="width:{(averages.base_model or 0) / 5 * 100:.2f}%"></i></div>{_number(averages.base_model, labels)}</div><div class="score-row fine"><span>{labels['fine']}</span><div><i style="width:{(averages.fine_tuned_model or 0) / 5 * 100:.2f}%"></i></div>{_number(averages.fine_tuned_model, labels)}</div></div><p class="conclusion">{_conclusion(report, locale)}</p></section>
+<section id="durations"><h2>{labels['durations']}</h2><div class="four-grid"><article><span>{labels['training_duration']}</span><strong>{_duration(data.training_duration_seconds, labels)}</strong></article><article><span>{labels['inference_duration']}</span><strong>{_duration(data.inference_duration_seconds, labels)}</strong></article><article><span>{labels['judge_duration']}</span><strong>{_duration(data.judge_duration_seconds, labels)}</strong></article><article><span>{labels['total_duration']}</span><strong>{_duration(total_duration, labels)}</strong></article></div></section>
+<section id="training-config"><h2>{labels['training']}</h2><div class="meta-grid">{_render_training(data, labels)}</div></section>
+<section id="tokens-cost"><h2>{labels['tokens_cost']}</h2>{_render_tokens(data, labels)}<div class="cost-panel">{_render_costs(data, labels)}</div></section>
+<section id="criteria"><h2>{labels['criteria']}</h2><div class="criteria-grid">{_render_criteria(data, labels)}</div></section>
+<section id="samples"><h2>{labels['samples']}</h2>{samples}</section>
+<section id="validation"><h2>{labels['validation']}</h2><div class="validation-grid"><article><span>{labels['validation_status']}</span><strong class="status {state}">{labels['pass'] if state == 'ok' else _esc(data.validation_status)}</strong></article><article><span>{labels['run_id']}</span><strong>{_ltr(data.run_id)}</strong></article><article><span>{labels['pipeline_version']}</span><strong>{_ltr(data.pipeline_version)}</strong></article><article><span>{labels['random_seed']}</span><strong>{_ltr(data.random_seed)}</strong></article></div>
+<details class="technical"><summary>{labels['technical_details']}</summary><div class="meta-grid"><div class="meta-item"><span>{labels['generated_at']}</span><strong>{_ltr(data.generated_at.isoformat())}</strong></div><div class="meta-item"><span>{labels['config_fingerprint']}</span><strong>{_ltr(report.benchmark_metadata.config_fingerprint)}</strong></div><div class="meta-item"><span>{labels['dataset_hash']}</span><strong>{_ltr(report.dataset_information.source_sha256)}</strong></div><div class="meta-item"><span>{labels['dataset_path']}</span><strong>{_ltr(report.dataset_information.source_path)}</strong></div></div></details></section>
+</main></body></html>"""
 
 
 _CSS = """
-:root {
-  --bg: #f5f6f8;
-  --card: #ffffff;
-  --text: #1a1d21;
-  --muted: #5b636e;
-  --border: #e2e5ea;
-  --accent: #2a4b7c;
-  --missing: #9a3412;
-  --incomplete: #92400e;
-}
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: Tahoma, "Noto Sans Arabic", "DejaVu Sans", Arial, sans-serif;
-  line-height: 1.8;
-  font-size: 15px;
-}
-main {
-  max-width: 860px;
-  margin: 0 auto;
-  padding: 24px 16px 48px;
-}
-h1 { font-size: 24px; color: var(--accent); margin: 0 0 8px; }
-h2 {
-  font-size: 18px;
-  color: var(--accent);
-  border-bottom: 2px solid var(--border);
-  padding-bottom: 6px;
-  margin-top: 32px;
-}
-h3 { font-size: 16px; margin: 18px 0 6px; }
-section { background: var(--card); border: 1px solid var(--border);
-  border-radius: 10px; padding: 16px 18px; margin-top: 16px; }
-table.table { width: 100%; border-collapse: collapse; margin: 8px 0; }
-table.table th, table.table td {
-  text-align: right;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
-}
-table.table th { color: var(--muted); font-weight: normal; width: 42%; }
-table.table td { font-weight: 600; }
-.ltr { direction: ltr; unicode-bidi: isolate; font-variant-numeric: tabular-nums; }
-.missing { color: var(--missing); font-style: italic; }
-.incomplete { color: var(--incomplete); font-style: italic; }
-.conclusion {
-  background: #eef3fb;
-  border-right: 4px solid var(--accent);
-  padding: 10px 14px;
-  border-radius: 6px;
-  margin: 10px 0 0;
-}
-.note {
-  color: var(--muted);
-  font-size: 13px;
-  margin: 10px 0 0;
-}
-details {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  margin: 8px 0;
-  padding: 0;
-}
-details summary {
-  cursor: pointer;
-  padding: 10px 12px;
-  font-weight: 600;
-  background: #fafbfc;
-  border-radius: 8px;
-}
-.sample-body { padding: 4px 14px 14px; }
-.sample-body p { margin: 10px 0; }
-.sample-body .answer { display: block; white-space: pre-wrap; word-break: break-word;
-  background: #f7f8fa; border-radius: 6px; padding: 8px 10px; margin-top: 4px; }
+:root{color-scheme:dark;--bg:#080d18;--panel:#111827;--panel2:#172033;--line:#28344a;--text:#eef2ff;--muted:#9aa8bd;--fine:#22c55e;--base:#60a5fa;--tie:#f59e0b;--accent:#a78bfa;--danger:#fb7185}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#17213a 0,#080d18 42%);color:var(--text);font-family:Tahoma,Arial,"Noto Sans Arabic","DejaVu Sans",sans-serif;line-height:1.65}main{max-width:1180px;margin:auto;padding:32px 20px 64px}.hero{display:flex;justify-content:space-between;gap:24px;align-items:center;margin-bottom:22px}.hero h1{margin:2px 0;font-size:clamp(28px,4vw,44px)}.hero p{margin:0;color:var(--muted)}.eyebrow{color:var(--accent)!important;letter-spacing:.18em;font-size:12px}section{background:linear-gradient(145deg,rgba(23,32,51,.95),rgba(13,20,34,.96));border:1px solid var(--line);border-radius:18px;padding:22px;margin:16px 0;box-shadow:0 18px 45px rgba(0,0,0,.18)}h2{margin:0 0 18px;font-size:20px}h3{margin:18px 0 10px;font-size:15px;color:#cbd5e1}.kpi-grid,.four-grid,.validation-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.kpi,.four-grid article,.validation-grid article,.judge-card{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:16px}.kpi span,.four-grid span,.validation-grid span,.judge-card>span,.meta-item>span{display:block;color:var(--muted);font-size:12px}.kpi strong{display:block;font-size:29px;margin-top:4px}.kpi.fine strong{color:var(--fine)}.kpi.base strong{color:var(--base)}.win-bar{display:flex;height:14px;margin:22px 0 8px;overflow:hidden;border-radius:999px;background:#29344a}.fine-segment{background:var(--fine)}.tie-segment{background:var(--tie)}.base-segment{background:var(--base)}.legend{display:flex;gap:22px;color:var(--muted);font-size:12px}.legend span:before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-inline-end:7px}.fine-dot:before{background:var(--fine)}.tie-dot:before{background:var(--tie)}.base-dot:before{background:var(--base)}.score-row{display:grid;grid-template-columns:130px 1fr 70px;align-items:center;gap:12px;margin:10px 0}.score-row>div{height:9px;background:#263249;border-radius:10px;overflow:hidden}.score-row i{display:block;height:100%;background:var(--base)}.score-row.fine i{background:var(--fine)}.conclusion{border-inline-start:3px solid var(--accent);background:#181d33;padding:12px 15px;border-radius:8px}.four-grid strong,.validation-grid strong{display:block;margin-top:5px}.meta-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden}.meta-item{background:var(--panel);padding:13px 15px;min-width:0}.meta-item strong{display:block;overflow-wrap:anywhere}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse}th,td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:start;white-space:nowrap}th{color:var(--muted);font-size:12px}.cost-panel{display:grid;grid-template-columns:minmax(220px,.7fr) 1.3fr;gap:16px;margin-top:20px}.judge-card{display:flex;flex-direction:column;justify-content:center}.judge-card strong{font-size:19px;margin-top:8px}.price-list{display:grid;gap:8px}.price-row{display:flex;justify-content:space-between;gap:18px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px 14px}.pricing-date,.note{margin:5px 0;color:var(--muted);font-size:12px}.criteria-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.criterion-card{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:15px}.criterion-head,.criterion-scores{display:flex;justify-content:space-between;gap:12px}.criterion-card p{color:var(--muted);font-size:12px;min-height:38px}.criterion-scores span{font-size:12px;color:var(--muted)}.criterion-scores b{display:block;color:var(--text);font-size:16px}.sample-card{border:1px solid var(--line);border-radius:12px;margin:9px 0;background:var(--panel)}.sample-card summary{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;cursor:pointer;padding:13px 15px}.winner{color:var(--accent)}.sample-body{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 15px 15px}.sample-body>div{background:var(--panel2);border-radius:10px;padding:12px;min-width:0}.sample-body strong{display:block;color:var(--muted);font-size:12px}.user-content,.answer{display:block;white-space:pre-wrap;overflow-wrap:anywhere}.status{display:inline-flex!important;width:max-content;padding:5px 10px;border-radius:999px;font-size:12px}.status.ok{background:#123723;color:#86efac}.status.warn{background:#422006;color:#fdba74}.technical{margin-top:14px}.technical summary{cursor:pointer;color:var(--muted)}.technical .meta-grid{margin-top:12px}.ltr{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums}.missing{color:var(--danger)}.incomplete{color:var(--tie)}.empty{color:var(--muted)}
+@media(max-width:800px){main{padding:20px 12px 40px}.kpi-grid,.four-grid,.validation-grid{grid-template-columns:1fr 1fr}.meta-grid,.criteria-grid{grid-template-columns:1fr 1fr}.cost-panel{display:block}.judge-card{margin-bottom:16px}.sample-body{grid-template-columns:1fr}.score-row{grid-template-columns:90px 1fr 60px}}@media(max-width:480px){.hero{align-items:flex-start;flex-direction:column}.kpi-grid,.four-grid,.validation-grid,.meta-grid,.criteria-grid{grid-template-columns:1fr}.price-row{align-items:flex-start;flex-direction:column}.sample-card summary{flex-direction:column}}@media print{body{background:#fff;color:#111}section,.kpi,.four-grid article,.validation-grid article,.judge-card,.criterion-card,.sample-card,.meta-item,.price-row{background:#fff;color:#111;box-shadow:none}section,.sample-card{break-inside:avoid}.technical{display:none}}
 """

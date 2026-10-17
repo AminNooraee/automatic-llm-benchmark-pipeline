@@ -124,6 +124,7 @@ phase1_benchmark:
         reports/report.json \
         reports/samples.csv \
         reports/benchmark_summary.html \
+        reports/benchmark_summary_en.html \
         metadata/artifact_validation.json \
         metadata/reproducibility.json \
         manifest.json
@@ -141,6 +142,7 @@ phase1_benchmark:
       - ci_artifacts/benchmark/report.json
       - ci_artifacts/benchmark/samples.csv
       - ci_artifacts/benchmark/benchmark_summary.html
+      - ci_artifacts/benchmark/benchmark_summary_en.html
       - ci_artifacts/benchmark/artifact_validation.json
       - ci_artifacts/benchmark/reproducibility.json
       - ci_artifacts/benchmark/manifest.json

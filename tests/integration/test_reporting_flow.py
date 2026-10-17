@@ -100,6 +100,15 @@ def test_full_judge_results_to_report_flow(config_factory) -> None:
 
     result = pipeline.generate_reports(config, context)
 
+    persian_summary = context.run_dir / "reports" / "benchmark_summary.html"
+    english_summary = context.run_dir / "reports" / "benchmark_summary_en.html"
+    assert '<html lang="fa" dir="rtl">' in persian_summary.read_text(
+        encoding="utf-8"
+    )
+    assert '<html lang="en" dir="ltr">' in english_summary.read_text(
+        encoding="utf-8"
+    )
+
     report = json.loads(result.report_json_path.read_text(encoding="utf-8"))
     assert report["aggregate_metrics"]["fine_tuned_model_wins"] == 1
     assert report["aggregate_metrics"]["average_scores_per_model"] == {

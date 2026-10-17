@@ -1,10 +1,9 @@
-"""Static, version-controlled estimate of the judge model's API cost.
+"""Static reference-model pricing for an actual judge workload.
 
-Cost is derived only from token usage actually reported by the judge and a
-committed pricing snapshot. It is an estimate: provider tokenization may
-differ from what the endpoint reports. When the judge model has no pricing
-entry, or judge usage coverage is incomplete, no cost is produced (the report
-renders ناموجود) rather than a misleading number.
+Costs are derived only from token usage reported by the actual judge and a
+committed pricing snapshot. They are estimates because provider tokenization
+may differ. Incomplete usage or an invalid reference entry produces an
+unavailable estimate for that entry rather than a misleading number.
 """
 
 from __future__ import annotations
@@ -33,6 +32,15 @@ class JudgeCost:
     cost_low: float | None = None
     cost_high: float | None = None
     range_label: str | None = None
+
+
+@dataclass(frozen=True)
+class JudgeCostComparison:
+    """Reference-model estimates for one actual judge workload."""
+
+    currency: str
+    snapshot_date: str
+    estimates: tuple[JudgeCost, ...]
 
 
 def load_pricing(path: str | Path) -> dict:
@@ -157,3 +165,85 @@ def _metadata(pricing: dict) -> dict:
         "currency": str(pricing.get("currency", "USD")),
         "snapshot_date": str(pricing.get("snapshot_date", "")),
     }
+
+
+def estimate_reference_costs(
+    *, judge_usage: RoleUsage, pricing: dict
+) -> JudgeCostComparison:
+    """Price one judge workload against every configured reference model."""
+
+    metadata = _metadata(pricing)
+    models = pricing.get("models", [])
+    if not isinstance(models, list):
+        models = []
+    estimates: list[JudgeCost] = []
+    for entry in models:
+        if not isinstance(entry, dict):
+            continue
+        display = str(
+            entry.get("display_name") or entry.get("name") or "Unavailable"
+        )
+        estimates.append(
+            _estimate_reference_entry(
+                entry=entry,
+                display=display,
+                judge_usage=judge_usage,
+                metadata=metadata,
+            )
+        )
+    return JudgeCostComparison(
+        currency=metadata["currency"],
+        snapshot_date=metadata["snapshot_date"],
+        estimates=tuple(estimates),
+    )
+
+
+def _estimate_reference_entry(
+    *,
+    entry: dict,
+    display: str,
+    judge_usage: RoleUsage,
+    metadata: dict[str, str],
+) -> JudgeCost:
+    if not judge_usage.complete:
+        return _unavailable(metadata, display)
+    prompt = judge_usage.prompt_tokens
+    completion = judge_usage.completion_tokens
+    if prompt is None or completion is None:
+        return _unavailable(metadata, display)
+
+    pricing_block = entry.get("pricing")
+    if not isinstance(pricing_block, dict):
+        return _unavailable(metadata, display)
+    tiers = pricing_block.get("tiers")
+    if tiers is not None:
+        if not isinstance(tiers, list) or not tiers:
+            return _unavailable(metadata, display)
+        try:
+            values = [_cost_for_tier(tier, prompt, completion) for tier in tiers]
+        except (KeyError, TypeError, ValueError):
+            return _unavailable(metadata, display)
+        return JudgeCost(
+            priced=True,
+            model_display=display,
+            currency=metadata["currency"],
+            snapshot_date=metadata["snapshot_date"],
+            kind="range",
+            cost_low=min(values),
+            cost_high=max(values),
+            range_label=" → ".join(str(tier.get("label", "")) for tier in tiers),
+        )
+    if not all(key in pricing_block for key in _PRICING_KEYS):
+        return _unavailable(metadata, display)
+    try:
+        value = _cost_for_tier(pricing_block, prompt, completion)
+    except (KeyError, TypeError, ValueError):
+        return _unavailable(metadata, display)
+    return JudgeCost(
+        priced=True,
+        model_display=display,
+        currency=metadata["currency"],
+        snapshot_date=metadata["snapshot_date"],
+        kind="flat",
+        cost=value,
+    )
