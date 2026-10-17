@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from llm_benchmark import __version__
+from llm_benchmark.config.handoff import load_optional_report_context
 from llm_benchmark.config.loader import load_config
 from llm_benchmark.exceptions import BenchmarkError
 from llm_benchmark.observability.logging import configure_logging
@@ -29,12 +30,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     validate_parser.add_argument("--config", type=Path, required=True)
     validate_parser.add_argument("--project1-handoff", type=Path)
+    validate_parser.add_argument("--project1-report-context", type=Path)
 
     run_parser = subparsers.add_parser(
         "run", help="Run dataset preparation, model inference, and judge evaluation."
     )
     run_parser.add_argument("--config", type=Path, required=True)
     run_parser.add_argument("--project1-handoff", type=Path)
+    run_parser.add_argument(
+        "--project1-report-context",
+        type=Path,
+        help="Optional sanitized Project #1 training report context for the HTML summary.",
+    )
     run_parser.add_argument(
         "--skip-preflight",
         action="store_true",
@@ -67,7 +74,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Configuration is valid: {args.config.resolve()}")
             return 0
 
-        pipeline = BenchmarkPipeline()
+        report_context = load_optional_report_context(
+            getattr(args, "project1_report_context", None)
+        )
+        pipeline = BenchmarkPipeline(report_context=report_context)
         if args.command == "preflight":
             asyncio.run(pipeline.preflight(config))
             print("Preflight succeeded: base, fine_tuned, judge")

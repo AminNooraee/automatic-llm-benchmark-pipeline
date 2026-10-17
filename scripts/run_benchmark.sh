@@ -2,7 +2,7 @@
 set -eu
 
 usage() {
-  echo "Usage: sh scripts/run_benchmark.sh CONFIG [--project1-handoff FILE] [--skip-preflight]" >&2
+  echo "Usage: sh scripts/run_benchmark.sh CONFIG [--project1-handoff FILE] [--project1-report-context FILE] [--skip-preflight]" >&2
   exit 64
 }
 
@@ -10,12 +10,18 @@ usage() {
 config_input=$1
 shift
 handoff_input=
+report_context_input=
 skip_preflight=0
 while [ "$#" -gt 0 ]; do
   case $1 in
     --project1-handoff)
       [ "$#" -ge 2 ] || usage
       handoff_input=$2
+      shift 2
+      ;;
+    --project1-report-context)
+      [ "$#" -ge 2 ] || usage
+      report_context_input=$2
       shift 2
       ;;
     --skip-preflight)
@@ -58,6 +64,13 @@ if [ -n "$handoff_input" ]; then
   handoff_path=$handoff_dir/$(basename -- "$handoff_input")
 fi
 
+report_context_path=
+if [ -n "$report_context_input" ]; then
+  [ -f "$report_context_input" ] || { echo "Project #1 report context is not a regular file: $report_context_input" >&2; exit 66; }
+  report_context_dir=$(CDPATH= cd -- "$(dirname -- "$report_context_input")" && pwd -P)
+  report_context_path=$report_context_dir/$(basename -- "$report_context_input")
+fi
+
 env_names=$(grep -o '\${[A-Za-z_][A-Za-z0-9_]*}' "$config_path" 2>/dev/null | sed 's/^${//;s/}$//' | sort -u)
 for variable_name in $env_names; do
   printf '%s\n' "$variable_name" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*$' || {
@@ -85,6 +98,9 @@ fi
 if [ -n "$handoff_path" ]; then
   set -- "$@" --mount "type=bind,src=$handoff_path,dst=/handoff/project1.json,readonly"
 fi
+if [ -n "$report_context_path" ]; then
+  set -- "$@" --mount "type=bind,src=$report_context_path,dst=/handoff/report_context.json,readonly"
+fi
 if [ -n "${BENCHMARK_DOCKER_NETWORK:-}" ]; then
   set -- "$@" --network "$BENCHMARK_DOCKER_NETWORK"
 fi
@@ -94,6 +110,9 @@ done
 set -- "$@" "$image" run --config "/workspace/$config_relative"
 if [ -n "$handoff_path" ]; then
   set -- "$@" --project1-handoff /handoff/project1.json
+fi
+if [ -n "$report_context_path" ]; then
+  set -- "$@" --project1-report-context /handoff/report_context.json
 fi
 if [ "$skip_preflight" -eq 1 ]; then
   set -- "$@" --skip-preflight

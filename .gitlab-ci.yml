@@ -45,8 +45,9 @@ phase1_benchmark:
       dataset_path="$dataset_dir/$PROJECT1_BENCHMARK_FILE"
       handoff_file=
       benchmark_log=
+      report_context_file=
       cleanup() {
-        rm -f -- "$handoff_file" "$benchmark_log"
+        rm -f -- "$handoff_file" "$benchmark_log" "$report_context_file"
         rm -rf -- "$dataset_dir"
       }
       trap cleanup EXIT HUP INT TERM
@@ -80,8 +81,20 @@ phase1_benchmark:
 
       set -o pipefail
 
+      run_benchmark_extra=
+      if [ -n "${PROJECT1_REPORT_CONTEXT_B64:-}" ]; then
+        report_context_file=$(mktemp "${TMPDIR:-/tmp}/project1-report-context.XXXXXX.json")
+        chmod 600 "$report_context_file"
+        if ! printf '%s' "$PROJECT1_REPORT_CONTEXT_B64" | base64 --decode >"$report_context_file"; then
+          echo "PROJECT1_REPORT_CONTEXT_B64 is not valid Base64" >&2
+          exit 65
+        fi
+        run_benchmark_extra="--project1-report-context $report_context_file"
+      fi
+
+      # shellcheck disable=SC2086
       if sh scripts/run_benchmark.sh configs/ci_phase1.yaml \
-        --project1-handoff "$handoff_file" 2>&1 | tee "$benchmark_log"; then
+        --project1-handoff "$handoff_file" $run_benchmark_extra 2>&1 | tee "$benchmark_log"; then
         :
       else
         benchmark_status=$?
@@ -107,6 +120,7 @@ phase1_benchmark:
         reports/report.md \
         reports/report.json \
         reports/samples.csv \
+        reports/benchmark_summary.html \
         metadata/artifact_validation.json \
         metadata/reproducibility.json \
         manifest.json
@@ -123,6 +137,7 @@ phase1_benchmark:
       - ci_artifacts/benchmark/report.md
       - ci_artifacts/benchmark/report.json
       - ci_artifacts/benchmark/samples.csv
+      - ci_artifacts/benchmark/benchmark_summary.html
       - ci_artifacts/benchmark/artifact_validation.json
       - ci_artifacts/benchmark/reproducibility.json
       - ci_artifacts/benchmark/manifest.json

@@ -1,0 +1,36 @@
+# Version-controlled judge pricing snapshot.
+#
+# Used by the benchmark HTML summary to estimate the JUDGE model's API cost
+# from reported token usage. No network calls are made; these are static rates.
+#
+# Matching is by judge model `name` (case-insensitive), optionally via `aliases`.
+# A judge model that is not listed here yields "no price" (rendered ناموجود),
+# never an invented number.
+
+snapshot_date: "2026-10-14"
+currency: "USD"
+
+models:
+  - name: "gpt-5.6-sol"
+    display_name: "OpenAI GPT-5.6 Sol"
+    pricing:
+      input_per_million: 4.00
+      output_per_million: 20.00
+
+  - name: "claude-sonnet-5-5"
+    display_name: "Anthropic Claude Sonnet 5.5"
+    pricing:
+      input_per_million: 2.00
+      output_per_million: 10.00
+
+  - name: "deepseek-v4-pro"
+    display_name: "DeepSeek V4-Pro"
+    # Single range shown in the report (off-peak low, peak high), not two rows.
+    pricing:
+      tiers:
+        - label: "off-peak"
+          input_per_million: 0.66
+          output_per_million: 1.98
+        - label: "peak"
+          input_per_million: 1.32
+          output_per_million: 3.96

@@ -67,6 +67,13 @@ class InferenceArtifactStore:
         )
         return result.path
 
+    def read_responses(self) -> list[InferenceResponse]:
+        """Read the canonical responses artifact, preserving file order."""
+
+        target: dict[str, InferenceResponse] = {}
+        self._load_file(self.responses_path, target, allow_duplicates=False)
+        return list(target.values())
+
     @staticmethod
     def _load_file(
         path: Path,

@@ -124,6 +124,7 @@ def test_gitlab_job_is_downstream_only_and_publishes_exact_run() -> None:
         "ci_artifacts/benchmark/report.md",
         "ci_artifacts/benchmark/report.json",
         "ci_artifacts/benchmark/samples.csv",
+        "ci_artifacts/benchmark/benchmark_summary.html",
         "ci_artifacts/benchmark/artifact_validation.json",
         "ci_artifacts/benchmark/reproducibility.json",
         "ci_artifacts/benchmark/manifest.json",
