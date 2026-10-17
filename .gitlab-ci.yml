@@ -81,6 +81,9 @@ phase1_benchmark:
 
       set -o pipefail
 
+      BENCHMARK_FORCE_BUILD=1
+      export BENCHMARK_FORCE_BUILD
+
       run_benchmark_extra=
       if [ -n "${PROJECT1_REPORT_CONTEXT_B64:-}" ]; then
         report_context_file=$(mktemp "${TMPDIR:-/tmp}/project1-report-context.XXXXXX.json")

@@ -110,6 +110,11 @@ def test_gitlab_job_is_downstream_only_and_publishes_exact_run() -> None:
     assert "export BENCHMARK_DATASETS_DIR BENCHMARK_DATASET_PATH" in script
     assert "/srv/automatic-llm-benchmark/datasets/phase1_benchmark.json" not in script
     assert "set -x" not in script
+    assert "BENCHMARK_FORCE_BUILD=1" in script
+    assert "export BENCHMARK_FORCE_BUILD" in script
+    assert script.index("export BENCHMARK_FORCE_BUILD") < script.index(
+        "sh scripts/run_benchmark.sh"
+    )
     assert 'echo "$PROJECT1_ARTIFACT_READ_TOKEN"' not in script
     assert 'echo "$LITELLM_API_KEY"' not in script
     assert "base64 --decode" in script

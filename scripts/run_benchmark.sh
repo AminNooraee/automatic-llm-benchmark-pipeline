@@ -83,7 +83,8 @@ for variable_name in $env_names; do
   }
 done
 
-if ! docker image inspect "$image" >/dev/null 2>&1; then
+if [ "${BENCHMARK_FORCE_BUILD:-0}" = "1" ] || \
+   ! docker image inspect "$image" >/dev/null 2>&1; then
   docker build --tag "$image" "$repo_dir"
 fi
 
